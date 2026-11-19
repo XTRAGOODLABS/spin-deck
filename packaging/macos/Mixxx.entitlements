@@ -7,8 +7,6 @@
          See https://developer.apple.com/documentation/security/app_sandbox for details.
       -->
     <!-- Enable the App Sandbox -->
-    <key>com.apple.security.app-sandbox</key>
-    <true/>
     <!-- Allow access to the music directory -->
     <key>com.apple.security.assets.music.read-write</key>
     <true/>

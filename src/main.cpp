@@ -1,5 +1,7 @@
 #include <QApplication>
 #include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QPixmapCache>
 #include <QString>
 #include <QStringList>
@@ -208,8 +210,53 @@ Java_org_qtproject_qt_android_QtNativeAccessibility_accessibilitySupported(JNIEn
 }
 #endif
 
+#ifdef Q_OS_MACOS
+namespace {
+// Spin Deck: early beta builds ran inside Apple's sandbox, which kept settings in
+// ~/Library/Containers/com.xtragoodlabs.spindeck/... Builds now run outside it, so copy
+// those settings (library, controllers, GOOD MIXX memory) over once.
+bool copyFolder(const QString& from, const QString& to) {
+    QDir source(from);
+    if (!QDir().mkpath(to)) {
+        return false;
+    }
+    bool ok = true;
+    const auto entries = source.entryInfoList(
+            QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden);
+    for (const auto& entry : entries) {
+        const QString target = QDir(to).filePath(entry.fileName());
+        if (entry.isDir() && !entry.isSymLink()) {
+            ok = copyFolder(entry.absoluteFilePath(), target) && ok;
+        } else if (!QFile::exists(target)) {
+            ok = QFile::copy(entry.absoluteFilePath(), target) && ok;
+        }
+    }
+    return ok;
+}
+
+void moveSandboxedSettings() {
+    if (qEnvironmentVariableIsSet("APP_SANDBOX_CONTAINER_ID")) {
+        return; // still sandboxed
+    }
+    const QString home = QDir::homePath();
+    const QString target = home + QStringLiteral("/Library/Application Support/Spin Deck");
+    const QString source = home +
+            QStringLiteral("/Library/Containers/com.xtragoodlabs.spindeck/Data/"
+                           "Library/Application Support/Spin Deck");
+    if (QDir(target).exists() || !QDir(source).exists()) {
+        return;
+    }
+    copyFolder(source, target);
+}
+} // namespace
+#endif
+
 int main(int argc, char * argv[]) {
     Console console;
+
+#ifdef Q_OS_MACOS
+    moveSandboxedSettings();
+#endif
 
     // These need to be set early on (not sure how early) in order to trigger
     // logic in the OS X appstore support patch from QTBUG-16549.
