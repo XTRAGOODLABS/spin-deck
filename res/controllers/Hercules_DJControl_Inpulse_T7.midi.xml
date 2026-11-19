@@ -4057,6 +4057,86 @@
                     <script-binding/>
                 </options>
             </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>DJCiT7.deck1.stemButton</key>
+                <description>INSTRUMENTAL, deck 1: mute or unmute the music (drums, bass, other) of a stem file (Spin Deck)</description>
+                <status>0x91</status>
+                <midino>0x01</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>DJCiT7.deck1.stemButton</key>
+                <description>VOCAL, deck 1: mute or unmute the vocals of a stem file (Spin Deck)</description>
+                <status>0x91</status>
+                <midino>0x02</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>DJCiT7.deck1.stemButton</key>
+                <description>INSTRUMENTAL, deck 1: mute or unmute the music (drums, bass, other) of a stem file (Spin Deck)</description>
+                <status>0x94</status>
+                <midino>0x01</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel1]</group>
+                <key>DJCiT7.deck1.stemButton</key>
+                <description>VOCAL, deck 1: mute or unmute the vocals of a stem file (Spin Deck)</description>
+                <status>0x94</status>
+                <midino>0x02</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>DJCiT7.deck2.stemButton</key>
+                <description>INSTRUMENTAL, deck 2: mute or unmute the music (drums, bass, other) of a stem file (Spin Deck)</description>
+                <status>0x92</status>
+                <midino>0x01</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>DJCiT7.deck2.stemButton</key>
+                <description>VOCAL, deck 2: mute or unmute the vocals of a stem file (Spin Deck)</description>
+                <status>0x92</status>
+                <midino>0x02</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>DJCiT7.deck2.stemButton</key>
+                <description>INSTRUMENTAL, deck 2: mute or unmute the music (drums, bass, other) of a stem file (Spin Deck)</description>
+                <status>0x95</status>
+                <midino>0x01</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
+            <control>
+                <group>[Channel2]</group>
+                <key>DJCiT7.deck2.stemButton</key>
+                <description>VOCAL, deck 2: mute or unmute the vocals of a stem file (Spin Deck)</description>
+                <status>0x95</status>
+                <midino>0x02</midino>
+                <options>
+                    <script-binding/>
+                </options>
+            </control>
         </controls>
     </controller>
 </MixxxControllerPreset>

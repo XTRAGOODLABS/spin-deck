@@ -134,6 +134,7 @@ class WTrackMenu : public QMenu {
   private slots:
     // File
     void slotOpenInFileBrowser();
+    void slotMakeStems();
     void slotSelectInLibrary();
 
     // Track rating
@@ -330,6 +331,7 @@ class WTrackMenu : public QMenu {
 
     // Open file in default file browser
     parented_ptr<QAction> m_pFileBrowserAct;
+    parented_ptr<QAction> m_pMakeStemsAct;
 
     // Select track in library
     parented_ptr<QAction> m_pSelectInLibraryAct;

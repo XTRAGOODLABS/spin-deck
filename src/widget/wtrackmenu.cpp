@@ -1,5 +1,7 @@
 #include "widget/wtrackmenu.h"
 
+#include "spindeck/stemmaker.h"
+
 #include <QCheckBox>
 #include <QDialogButtonBox>
 #include <QInputDialog>
@@ -380,6 +382,9 @@ void WTrackMenu::createActions() {
     if (featureIsEnabled(Feature::FileBrowser)) {
         m_pFileBrowserAct = make_parented<QAction>(tr("Open in File Browser"), this);
         connect(m_pFileBrowserAct, &QAction::triggered, this, &WTrackMenu::slotOpenInFileBrowser);
+        // Spin Deck: split songs into drums, bass, other and vocals
+        m_pMakeStemsAct = make_parented<QAction>(tr("Make Stems"), this);
+        connect(m_pMakeStemsAct, &QAction::triggered, this, &WTrackMenu::slotMakeStems);
     }
 
     if (featureIsEnabled(Feature::SelectInLibrary)) {
@@ -781,6 +786,9 @@ void WTrackMenu::setupActions() {
 
     if (featureIsEnabled(Feature::FileBrowser)) {
         addAction(m_pFileBrowserAct);
+        if (m_pLibrary) {
+            addAction(m_pMakeStemsAct);
+        }
     }
 
     if (featureIsEnabled(Feature::Properties)) {
@@ -1397,6 +1405,23 @@ const QModelIndexList& WTrackMenu::getTrackIndices() const {
     // if a TrackModel is available.
     DEBUG_ASSERT(m_pTrackModel);
     return m_trackIndexList;
+}
+
+void WTrackMenu::slotMakeStems() {
+    if (!m_pLibrary) {
+        return;
+    }
+    QStringList paths;
+    const auto trackRefs = getTrackRefs();
+    for (const auto& trackRef : trackRefs) {
+        if (trackRef.hasLocation()) {
+            paths.append(trackRef.getLocation());
+        }
+    }
+    if (!paths.isEmpty()) {
+        spindeck::StemMaker::instance()->makeStems(
+                paths, m_pLibrary->trackCollectionManager(), m_pConfig);
+    }
 }
 
 void WTrackMenu::slotOpenInFileBrowser() {

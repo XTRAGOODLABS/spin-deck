@@ -1397,6 +1397,8 @@ add_library(
   src/library/autodj/autodjfeature.cpp
   src/library/goodmixx/goodmixxfeature.cpp
   src/library/goodmixx/goodmixxstore.cpp
+  src/spindeck/spindecksign.cpp
+  src/spindeck/stemmaker.cpp
   src/library/autodj/autodjprocessor.cpp
   src/library/autodj/dlgautodj.cpp
   src/library/autodj/dlgautodj.ui
@@ -2611,6 +2613,13 @@ endif()
 install(
   DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/res/keyboard"
   DESTINATION "${MIXXX_INSTALL_DATADIR}"
+)
+
+# Spin Deck helper scripts (stem maker)
+install(
+  DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/res/spindeck"
+  DESTINATION "${MIXXX_INSTALL_DATADIR}"
+  USE_SOURCE_PERMISSIONS
 )
 
 # Licenses

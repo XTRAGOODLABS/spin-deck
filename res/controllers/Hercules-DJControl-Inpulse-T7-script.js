@@ -115,7 +115,11 @@ DJCiT7.COLOURS = {
     effectOn: 0x60,
     key: 0x52,
     goodMix: 0x1C,
+    stemMuted: 0x40,
 };
+
+/** Spin Deck: lamp colours of the four stems (drums, bass, other, vocals). */
+DJCiT7.STEM_COLOURS = [0x1C, 0x74, 0x63, 0x03];
 
 DJCiT7.deck1 = null;
 DJCiT7.deck2 = null;
@@ -526,6 +530,19 @@ DJCiT7.Deck = function(number) {
             } else if (page === 2) {
                 const size = DJCiT7.LOOP_SIZES[i];
                 pad = keyedPad(page, i, `beatloop_${size}_toggle`, `beatlooproll_${size}_activate`, `beatloop_${size}_enabled`, blinkWhileActive);
+            } else if (page === 3 && i < 4) {
+                // Spin Deck: pads 1-4 mute or unmute drums, bass, other, vocals.
+                // Lit in the stem's colour while it plays, dark red while muted.
+                pad = new components.Button(Object.assign(padOptions(page, i), {
+                    group: `[Channel${number}_Stem${i + 1}]`,
+                    type: toggle,
+                    inKey: "mute",
+                    outKey: "mute",
+                    on: DJCiT7.COLOURS.stemMuted,
+                    off: DJCiT7.STEM_COLOURS[i],
+                    shift: nothing,
+                    unshift: nothing,
+                }));
             } else if (page === 3) {
                 pad = fixedPad(page, i, false);
             } else if (page === 4) {
@@ -1029,6 +1046,50 @@ DJCiT7.FX_LIGHTS_OFF = [0xF0, 0x00, 0x01, 0x4E, 0x20, 0x02, 0x07, 0x7F, 0x00, 0x
  * Mixxx calls this when the mapping is loaded. It can run again without a shutdown in between.
  */
 /**
+ * Spin Deck: the INSTRUMENTAL and VOCAL buttons. INSTRUMENTAL mutes or unmutes the music
+ * (drums, bass, other); VOCAL mutes or unmutes the vocals. A button is lit while its part
+ * is muted. They only change the sound when a stem file is loaded.
+ * @param {number} _channel MIDI channel
+ * @param {number} control 0x01 INSTRUMENTAL, 0x02 VOCAL
+ * @param {number} value 0x7F pressed, 0x00 released
+ */
+DJCiT7.Deck.prototype.stemButton = function(_channel, control, value) {
+    if (value === 0) {
+        return;
+    }
+    const number = this.deckNumbers[0];
+    const stems = control === 0x02 ? [4] : [1, 2, 3];
+    const anyPlaying = stems.some(function(stem) {
+        return !engine.getValue(`[Channel${number}_Stem${stem}]`, "mute");
+    });
+    stems.forEach(function(stem) {
+        engine.setValue(`[Channel${number}_Stem${stem}]`, "mute", anyPlaying ? 1 : 0);
+    });
+};
+
+/**
+ * Spin Deck: keep the INSTRUMENTAL and VOCAL lamps in step with the stem mutes.
+ */
+DJCiT7.Deck.prototype.connectStemLamps = function() {
+    const number = this.deckNumbers[0];
+    const lamp = function(note, stems) {
+        const update = function() {
+            const muted = stems.every(function(stem) {
+                return engine.getValue(`[Channel${number}_Stem${stem}]`, "mute") > 0;
+            });
+            midi.sendShortMsg(0x90 + number, note, muted ? 0x7F : 0x00);
+            midi.sendShortMsg(0x93 + number, note, muted ? 0x7F : 0x00);
+        };
+        stems.forEach(function(stem) {
+            engine.makeConnection(`[Channel${number}_Stem${stem}]`, "mute", update);
+        });
+        update();
+    };
+    lamp(0x01, [1, 2, 3]);
+    lamp(0x02, [4]);
+};
+
+/**
  * Spin Deck: flash a deck's pads green when a GOOD MIX is saved from it,
  * then put the pad lamps back the way they were.
  * @param {number} value The deck number the mix was saved from (1-4), or 0.
@@ -1065,6 +1126,8 @@ DJCiT7.init = function() {
     DJCiT7.crossfaderState = {enabled: true, msb: 0, pickup: false, lastPosition: null};
     DJCiT7.deck1 = new DJCiT7.Deck(1);
     DJCiT7.deck2 = new DJCiT7.Deck(2);
+    DJCiT7.deck1.connectStemLamps();
+    DJCiT7.deck2.connectStemLamps();
     if (engine.getValue("[GoodMixx]", "saved_deck") !== undefined) {
         engine.makeConnection("[GoodMixx]", "saved_deck", DJCiT7.goodMixSaved);
     }

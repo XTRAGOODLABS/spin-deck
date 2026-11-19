@@ -80,7 +80,5 @@ class GoodMixxFeature : public LibraryFeature {
 
     QTimer* m_pRefreshTimer;
     QTimer* m_pSavedDeckTimer;
-    QTimer* m_pSignTimer;
     QPointer<QWidget> m_pWindow;
-    QPointer<QLabel> m_pSign;
 };

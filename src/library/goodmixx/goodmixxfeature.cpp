@@ -26,6 +26,7 @@
 #include "library/treeitemmodel.h"
 #include "mixer/playerinfo.h"
 #include "mixer/playermanager.h"
+#include "spindeck/spindecksign.h"
 #include "moc_goodmixxfeature.cpp"
 #include "track/keyutils.h"
 #include "track/track.h"
@@ -85,8 +86,7 @@ GoodMixxFeature::GoodMixxFeature(Library* pLibrary, UserSettingsPointer pConfig)
           m_matchesPlaylistId(-1),
           m_lastDeck(0),
           m_pRefreshTimer(new QTimer(this)),
-          m_pSavedDeckTimer(new QTimer(this)),
-          m_pSignTimer(new QTimer(this)) {
+          m_pSavedDeckTimer(new QTimer(this)) {
     std::unique_ptr<TreeItem> pRoot = TreeItem::newRoot(this);
     pRoot->appendChild(tr("✓ Good mixes"), 0);
     pRoot->appendChild(tr("Suggestions"), 1);
@@ -131,13 +131,6 @@ GoodMixxFeature::GoodMixxFeature(Library* pLibrary, UserSettingsPointer pConfig)
         m_pSavedDeck->set(0);
     });
 
-    m_pSignTimer->setSingleShot(true);
-    m_pSignTimer->setInterval(2500);
-    connect(m_pSignTimer, &QTimer::timeout, this, [this]() {
-        if (m_pSign) {
-            m_pSign->hide();
-        }
-    });
 
     PlayerInfo& playerInfo = PlayerInfo::instance();
     connect(&playerInfo,
@@ -458,38 +451,8 @@ void GoodMixxFeature::importFromGoodMixxApp(bool tellUser) {
 }
 
 void GoodMixxFeature::showSign(const QString& headline, const QString& detail, bool good) {
-    QWidget* pWindow = m_pWindow ? m_pWindow.data() : QApplication::activeWindow();
-    if (!pWindow) {
-        return;
-    }
-    if (!m_pSign || m_pSign->parentWidget() != pWindow) {
-        delete m_pSign;
-        m_pSign = new QLabel(pWindow);
-        m_pSign->setAlignment(Qt::AlignCenter);
-        m_pSign->setAttribute(Qt::WA_TransparentForMouseEvents);
-        m_pSign->setTextFormat(Qt::RichText);
-    }
-    const QString color = good ? QStringLiteral("#ffffff") : QStringLiteral("#bbbbbb");
-    QString text = QStringLiteral(
-            "<div style='font-family: Impact, \"Anton\", sans-serif; font-size: 44px; "
-            "color: %1;'>%2</div>")
-                           .arg(color, headline.toHtmlEscaped());
-    if (!detail.isEmpty()) {
-        text += QStringLiteral(
-                "<div style='font-size: 17px; color: #ffffff; margin-top: 6px;'>%1</div>")
-                        .arg(detail.toHtmlEscaped().replace(QStringLiteral("\n"),
-                                QStringLiteral("<br>")));
-    }
-    m_pSign->setText(text);
-    m_pSign->setStyleSheet(QStringLiteral(
-            "QLabel { background-color: rgba(0, 0, 0, 235); border: 4px solid %1; "
-            "border-radius: 18px; padding: 18px 34px; }")
-                                   .arg(good ? QStringLiteral("#3ddc84") : QStringLiteral("#ffffff")));
-    m_pSign->adjustSize();
-    const int x = (pWindow->width() - m_pSign->width()) / 2;
-    const int y = std::max(40, pWindow->height() / 5);
-    m_pSign->move(std::max(0, x), y);
-    m_pSign->raise();
-    m_pSign->show();
-    m_pSignTimer->start();
+    spindeck::showSign(headline,
+            detail,
+            good ? spindeck::SignStyle::Good : spindeck::SignStyle::Neutral,
+            m_pWindow ? m_pWindow.data() : nullptr);
 }
