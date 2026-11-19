@@ -9,6 +9,13 @@ software made by the Mixxx Development Team. Mixxx is licensed under the GNU
 General Public License, version 2 or later, and so is Spin Deck. See
 [LICENSE](LICENSE). Huge thanks to everyone who has worked on Mixxx.
 
+## Controllers
+
+- **Hercules DJControl Inpulse T7** (beta): motor platters, colored pads,
+  effects and mixer. This setup is by Infinite-Grok
+  (github.com/Infinite-Grok/mixxx-hercules-t7, GPL-2.0-or-later), and builds on
+  the Inpulse 500 setup in Mixxx by Ev3nt1ne, DJ Phatso and resetreboot.
+
 ## Coming to Spin Deck
 
 - **GOOD MIXX**: remember the mixes that work and get next-song suggestions.
