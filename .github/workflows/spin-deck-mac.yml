@@ -1,0 +1,108 @@
+# Spin Deck by XTRAGOODLABS — Mac build
+# Builds unsigned Mac apps (Apple Silicon + Intel) and attaches each .dmg to
+# the workflow run so it can be downloaded from the Actions tab.
+# Based on the macOS jobs in build.yml from Mixxx (mixxx.org, GPL-2.0-or-later).
+
+name: Spin Deck Mac Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  mac:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Apple Silicon
+            slug: apple-silicon
+            triplet: arm64-osx-min1100-release
+            buildenv_script: tools/macos_arm64-cross-release_buildenv.sh
+            cache_id: arm64
+            qml: "ON"
+          - name: Intel
+            slug: intel
+            triplet: x64-osx-min1100-release
+            buildenv_script: tools/macos_release_buildenv.sh
+            cache_id: x64
+            qml: "OFF"
+    runs-on: macos-15-intel
+    name: Spin Deck Mac (${{ matrix.name }})
+    env:
+      BUILDENV_BASEPATH: /Users/runner/buildenv
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Fetch tags
+        run: git fetch origin --force --tags || true
+
+      - name: Set up cmake
+        uses: jwlawson/actions-setup-cmake@v2.2
+        with:
+          cmake-version: "3.22.x"
+
+      - name: Install ccache
+        run: brew install ccache
+
+      - name: Build environment name
+        run: ${{ matrix.buildenv_script }} name
+
+      - name: Set up build environment
+        run: ${{ matrix.buildenv_script }} setup
+
+      - name: Restore compiler cache
+        uses: actions/cache@v4
+        with:
+          path: /Users/runner/Library/Caches/ccache
+          key: spindeck-${{ matrix.cache_id }}-${{ hashFiles('src/**', 'CMakeLists.txt', 'cmake/**') }}
+          restore-keys: spindeck-${{ matrix.cache_id }}-
+
+      - name: Set up ccache
+        run: |
+          ccache --zero-stats
+          ccache --max-size=2G
+
+      - name: Configure
+        run: >-
+          mkdir -p build && cd build &&
+          cmake
+          -DBULK=ON -DCOREAUDIO=ON -DHSS1394=ON -DMACOS_BUNDLE=ON
+          -DMODPLUG=ON -DQT6=ON -DQML=${{ matrix.qml }} -DWAVPACK=ON
+          -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }}
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_PREFIX_PATH="${{ env.CMAKE_PREFIX_PATH }}"
+          -DWARNINGS_FATAL=OFF
+          -DDEBUG_ASSERTIONS_FATAL=OFF
+          -DBATTERY=ON -DBROADCAST=ON -DDOWNLOAD_MANUAL=ON -DHID=ON
+          -DKEYFINDER=ON -DLILV=ON -DOPUS=ON -DQTKEYCHAIN=ON
+          -DVINYLCONTROL=ON
+          ..
+
+      - name: Build
+        run: cmake --build . --config RelWithDebInfo
+        working-directory: build
+
+      - name: Package
+        uses: nick-fields/retry@v4
+        with:
+          timeout_minutes: 30
+          max_attempts: 12
+          retry_wait_seconds: 1
+          command: |
+            cd build
+            cpack -G DragNDrop -V
+
+      - name: Upload Mac app
+        uses: actions/upload-artifact@v7
+        with:
+          name: spin-deck-mac-${{ matrix.slug }}
+          path: build/*.dmg
+          retention-days: 30
