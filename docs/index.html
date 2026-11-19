@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spin Deck: free DJ app for Mac, by XTRAGOODLABS</title>
+<meta name="description" content="Spin Deck is a free DJ app for Mac. Real decks and mixer, GOOD MIXX remembers the mixes that worked, Make Stems splits songs, and the Hercules Inpulse T7 works out of the box.">
+<meta property="og:title" content="Spin Deck: free DJ app for Mac">
+<meta property="og:description" content="Real decks, GOOD MIXX mix memory, Make Stems and Inpulse T7 support. Free beta by XTRAGOODLABS.">
+<meta property="og:image" content="https://xtragoodlabs.github.io/spin-deck/screenshots/share.jpg">
+<meta property="og:url" content="https://xtragoodlabs.github.io/spin-deck/">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@500;700;850&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root { --green:#3ddc84; --line:#2a2a2a; --soft:#bdbdbd; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:#000; color:#fff; font-family:Archivo, system-ui, sans-serif; font-weight:500; line-height:1.5; }
+  a { color:#fff; }
+  .wrap { max-width:1120px; margin:0 auto; padding:0 24px; }
+  header { padding:28px 0; display:flex; align-items:center; justify-content:space-between; gap:16px; }
+  header img { height:44px; }
+  header nav a { color:var(--soft); text-decoration:none; margin-left:22px; font-weight:700; }
+  .beta { display:inline-block; background:var(--green); color:#000; font-weight:850; padding:6px 14px; border-radius:99px; font-size:14px; letter-spacing:.04em; }
+  h1, h2 { font-family:Anton, Impact, sans-serif; font-weight:400; letter-spacing:.01em; line-height:1.02; margin:0; }
+  h1 { font-size:clamp(48px, 8vw, 104px); margin:18px 0 18px; }
+  h2 { font-size:clamp(34px, 5vw, 56px); margin-bottom:22px; }
+  .lede { font-size:22px; color:#e6e6e6; max-width:720px; }
+  .buttons { display:flex; flex-wrap:wrap; gap:14px; margin:30px 0 12px; }
+  .btn { display:inline-block; padding:16px 26px; border-radius:14px; font-weight:850; font-size:19px; text-decoration:none; border:3px solid #fff; }
+  .btn.main { background:#fff; color:#000; }
+  .btn.green { background:var(--green); border-color:var(--green); color:#000; }
+  .small { color:var(--soft); font-size:15px; }
+  .mono { font-family:"IBM Plex Mono", monospace; }
+  .hero-shot { margin:46px 0 10px; border:3px solid #fff; border-radius:18px; overflow:hidden; }
+  .hero-shot img { display:block; width:100%; }
+  section { padding:70px 0; border-top:1px solid var(--line); }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px,1fr)); gap:20px; }
+  .card { border:2px solid #fff; border-radius:18px; padding:26px; background:#0b0b0b; }
+  .card h3 { font-family:Anton, Impact, sans-serif; font-weight:400; font-size:32px; margin:0 0 10px; }
+  .card p { margin:0; color:#ddd; }
+  .shots { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px,1fr)); gap:22px; }
+  figure { margin:0; }
+  figure img { width:100%; display:block; border-radius:14px; border:2px solid #333; }
+  figcaption { color:var(--soft); margin-top:10px; font-size:16px; }
+  ol.steps { counter-reset:s; list-style:none; padding:0; margin:0; }
+  ol.steps li { counter-increment:s; position:relative; padding:0 0 22px 64px; font-size:19px; }
+  ol.steps li::before { content:counter(s); position:absolute; left:0; top:-4px; width:44px; height:44px; border-radius:50%; background:var(--green); color:#000; font-family:Anton, Impact, sans-serif; font-size:24px; display:flex; align-items:center; justify-content:center; }
+  .need { border:2px dashed #555; border-radius:16px; padding:20px 24px; margin-top:16px; }
+  .need ul { margin:6px 0 0; }
+  .ask { border:4px solid var(--green); border-radius:22px; padding:34px; text-align:center; }
+  .ask .buttons { justify-content:center; }
+  footer { border-top:1px solid var(--line); padding:40px 0 60px; color:#9a9a9a; font-size:14px; }
+  footer p { margin:6px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <img src="lockup.png" alt="Spin Deck">
+    <nav><a href="#features">Features</a><a href="#install">Install</a><a href="#help">Help</a></nav>
+  </header>
+
+  <span class="beta">FREE BETA FOR MAC</span>
+  <h1>YOUR NEXT DJ APP<br>IS FREE.</h1>
+  <p class="lede">Spin Deck is a full DJ app for your Mac: real decks, a real mixer, a memory for the mixes that worked, and stems made right on your computer. No account. No subscription.</p>
+  <div class="buttons">
+    <a class="btn main" href="https://github.com/XTRAGOODLABS/spin-deck/releases/download/beta/Spin-Deck-Apple-Silicon.dmg">Download for Mac (M1–M4)</a>
+    <a class="btn" href="https://github.com/XTRAGOODLABS/spin-deck/releases/download/beta/Spin-Deck-Intel.dmg">Older Intel Mac</a>
+    <a class="btn" href="#install">How to install</a>
+  </div>
+  <p class="small">Beta: it changes often. Please tell us what breaks.</p>
+  <div class="hero-shot"><img src="screenshots/spin-deck.jpg" alt="Spin Deck with two decks loaded, the mixer and the library"></div>
+  <p class="small">Album covers in the screenshots are blurred.</p>
+</div>
+
+<section id="features"><div class="wrap">
+  <h2>WHAT IT DOES</h2>
+  <div class="cards">
+    <div class="card"><h3>GOOD MIXX</h3><p>Hit one button on your controller after a blend that works. A big “GOOD MIX SAVED” sign pops up, and next time GOOD MIXX lists your proven mixes first, then songs that match in key and tempo.</p></div>
+    <div class="card"><h3>MAKE STEMS</h3><p>Right-click any song and choose Make Stems. Spin Deck splits it into drums, bass, vocals and the rest, right on your Mac. Mute the vocals, drop the drums, build your own edits live.</p></div>
+    <div class="card"><h3>INPULSE T7 READY</h3><p>Plug in a Hercules DJControl Inpulse T7 and go: motor platters, colored pads, effects, plus VOCAL and INSTRUMENTAL buttons for stems. Other MIDI controllers work too.</p></div>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>SEE IT</h2>
+  <div class="shots">
+    <figure><img src="screenshots/good-mixx.jpg" alt="GOOD MIXX list in the Spin Deck library"><figcaption>GOOD MIXX in the library: what to play next after the song that's playing.</figcaption></figure>
+    <figure><img src="screenshots/decks.jpg" alt="A Spin Deck deck and the mixer"><figcaption>Decks with waveforms, sync, loops, hot cues and effects.</figcaption></figure>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>ALSO INSIDE</h2>
+  <div class="cards">
+    <div class="card"><h3>KEY + TEMPO PICKS</h3><p>Suggestions use the key wheel and tempo, including half and double time.</p></div>
+    <div class="card"><h3>RECORD YOUR SETS</h3><p>Record straight from the mixer and share the mix later.</p></div>
+    <div class="card"><h3>BRING YOUR MIXES</h3><p>Already use the GOOD MIXX app? Spin Deck brings your saved mixes in the first time it opens.</p></div>
+  </div>
+</div></section>
+
+<section><div class="wrap">
+  <h2>WORKS WITH</h2>
+  <p class="lede" style="margin-bottom:22px">Ready-made setups for about 165 controllers. Plug in, pick it in Preferences → Controllers, play. Popular ones:</p>
+  <div class="cards">
+    <div class="card"><h3>PIONEER DJ</h3><p>DDJ-FLX4, DDJ-400, DDJ-200, DDJ-SB / SB2 / SB3, DDJ-SX, CDJ-2000, CDJ-850</p></div>
+    <div class="card"><h3>HERCULES</h3><p>DJControl Inpulse T7 (with Spin Deck extras), Inpulse 200 / 300 / 500, DJControl MIX, Starlight, Compact</p></div>
+    <div class="card"><h3>NUMARK</h3><p>Mixtrack Pro FX, Mixtrack Platinum FX, Party Mix, DJ2GO2 Touch, Mixstream Pro, NS4FX, NS6II</p></div>
+    <div class="card"><h3>TRAKTOR KONTROL</h3><p>S2 MK3, S3, S4 MK3, S4 MK2, F1, X1, Z1</p></div>
+    <div class="card"><h3>DENON DJ &amp; MORE</h3><p>Denon MC7000, MC6000MK2, MC4000 · Roland DJ-505 · Reloop Mixage, Beatmix · Xone K2 · Korg KAOSS DJ · Novation Launchpad</p></div>
+    <div class="card"><h3>ANY MIDI GEAR</h3><p>Not listed? Use the built-in learn wizard: press a button, click what it should do.</p></div>
+  </div>
+  <p class="small" style="margin-top:16px">Controller setups come from the Mixxx community; some are more polished than others. Brand names belong to their owners.</p>
+</div></section>
+
+<section id="install"><div class="wrap">
+  <h2>HOW TO INSTALL</h2>
+  <ol class="steps">
+    <li>Download <b>Spin Deck</b> above: the M1–M4 version for newer Macs, Intel for older ones. Not sure? Apple menu → About This Mac → look at “Chip”.</li>
+    <li>Open the downloaded file and drag <b>Spin Deck</b> into <b>Applications</b>.</li>
+    <li>Open Spin Deck. The first time, your Mac blocks it because it isn't signed by an Apple developer yet. Go to <b>System Settings → Privacy &amp; Security</b>, scroll down and click <b>Open Anyway</b>.</li>
+    <li>In <b>Preferences → Library</b>, add your music folder. Using a T7? Pick it in <b>Preferences → Controllers</b> and set the sound to the T7 in <b>Sound Hardware</b>.</li>
+  </ol>
+  <div class="need"><b>You'll need</b>
+    <ul>
+      <li>A Mac (Apple Silicon or Intel)</li>
+      <li>Your own music files</li>
+      <li>For Make Stems: about 3 GB free (a one-time download of the free stem splitter)</li>
+    </ul>
+  </div>
+</div></section>
+
+<section id="help"><div class="wrap">
+  <div class="ask">
+    <h2>TRY IT. TELL US.</h2>
+    <p class="lede" style="margin:0 auto">Spin Deck is a free beta. Found a bug or have an idea? We want to hear it.</p>
+    <div class="buttons">
+      <a class="btn green" href="https://github.com/XTRAGOODLABS/spin-deck/releases/download/beta/Spin-Deck-Apple-Silicon.dmg">Download</a>
+      <a class="btn" href="https://www.instagram.com/djhellojoey/">DM @djhellojoey</a>
+      <a class="btn" href="https://github.com/XTRAGOODLABS/spin-deck/issues/new/choose">Report a bug</a>
+    </div>
+  </div>
+</div></section>
+
+<footer><div class="wrap">
+  <p><b>Spin Deck</b> by XTRAGOODLABS. Free and open source: <a href="https://github.com/XTRAGOODLABS/spin-deck">github.com/XTRAGOODLABS/spin-deck</a></p>
+  <p>Built on <a href="https://mixxx.org">Mixxx</a>, the free DJ software by the Mixxx Development Team, under the GNU GPL version 2 or later. Thank you, Mixxx team.</p>
+  <p>GOOD MIXX idea by DJ Aquarobotics. Inpulse T7 setup by Infinite-Grok (based on the Inpulse 500 setup by Ev3nt1ne, DJ Phatso and resetreboot). Stems split with Demucs (MIT licence).</p>
+  <p>Mixxx is a trademark of its owners. Hercules and DJControl Inpulse are trademarks of Guillemot Corporation. Pioneer DJ, Numark, Denon DJ, Native Instruments/TRAKTOR, Roland, Reloop, Allen &amp; Heath, Korg and Novation are trademarks of their owners. Mac and macOS are trademarks of Apple Inc. Spin Deck is not affiliated with or endorsed by any of them.</p>
+  <p class="mono">macOS · Apple Silicon &amp; Intel · beta</p>
+</div></footer>
+</body>
+</html>

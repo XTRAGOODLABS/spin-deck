@@ -1,5 +1,7 @@
 # Spin Deck by XTRAGOODLABS
 
+**Website and download:** https://xtragoodlabs.github.io/spin-deck
+
 Spin Deck is a DJ app from XTRAGOODLABS, part of the Crate OS family.
 
 ## Built on Mixxx
