@@ -45,11 +45,16 @@ void showSign(const QString& headline, const QString& detail, SignStyle style, Q
         return;
     }
     s_pLastWindow = pParent;
-    if (!s_pSign || s_pSign->parentWidget() != pParent) {
-        delete s_pSign;
-        s_pSign = new QLabel(pParent);
+    if (!s_pSign) {
+        // A small window of its own that floats over Spin Deck. (A plain child widget
+        // can end up hidden behind the waveform displays, which draw on top of it.)
+        s_pSign = new QLabel(nullptr,
+                Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint |
+                        Qt::WindowDoesNotAcceptFocus | Qt::WindowTransparentForInput);
         s_pSign->setAlignment(Qt::AlignCenter);
         s_pSign->setAttribute(Qt::WA_TransparentForMouseEvents);
+        s_pSign->setAttribute(Qt::WA_ShowWithoutActivating);
+        s_pSign->setAttribute(Qt::WA_TranslucentBackground);
         s_pSign->setTextFormat(Qt::RichText);
     }
     if (!s_pTimer) {
@@ -79,9 +84,10 @@ void showSign(const QString& headline, const QString& detail, SignStyle style, Q
             "border-radius: 18px; padding: 18px 34px; }")
                                    .arg(border));
     s_pSign->adjustSize();
+    const QPoint origin = pParent->mapToGlobal(QPoint(0, 0));
     const int x = (pParent->width() - s_pSign->width()) / 2;
     const int y = std::max(40, pParent->height() / 5);
-    s_pSign->move(std::max(0, x), y);
+    s_pSign->move(origin + QPoint(std::max(0, x), y));
     s_pSign->raise();
     s_pSign->show();
     if (style == SignStyle::Working) {
