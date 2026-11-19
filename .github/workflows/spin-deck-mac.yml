@@ -70,6 +70,22 @@ jobs:
           ccache --zero-stats
           ccache --max-size=2G
 
+      - name: Make Spin Deck icon with Impact (font that ships with macOS)
+        run: |
+          test -f /System/Library/Fonts/Supplemental/Impact.ttf
+          python3 -m pip install --quiet --break-system-packages pillow || python3 -m pip install --quiet --user pillow
+          python3 packaging/spindeck/make-icon.py
+
+      - name: Upload icon preview
+        if: matrix.slug == 'apple-silicon'
+        uses: actions/upload-artifact@v7
+        with:
+          name: spin-deck-icon
+          path: |
+            packaging/spindeck/icon.png
+            packaging/spindeck/lockup-big.png
+          retention-days: 30
+
       - name: Configure
         run: >-
           mkdir -p build && cd build &&
