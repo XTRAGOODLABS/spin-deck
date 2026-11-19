@@ -89,6 +89,11 @@ DJCiT7Platter.ENGAGE_HARD = 0.25; // vinyl takes over at once after two readings
 DJCiT7Platter.RELEASE_TOL = 0.015; // Mixxx takes over after this stays within RELEASE_MS
 DJCiT7Platter.RELEASE_MS = 150;
 DJCiT7Platter.DETECT_ALPHA = 0.1;
+// Spin Deck: snap start and stop. When a deck starts or stops, the music starts or stops at
+// once and the platter catches up underneath, instead of the sound following the motor as it
+// winds up or down. A hand on the platter during this time (pushing, pulling back) still
+// takes over as usual.
+DJCiT7Platter.SNAP_GRACE_MS = 2000;
 
 DJCiT7Platter.connections = [];
 DJCiT7Platter.decks = {1: {lastPos: null}, 2: {lastPos: null}};
@@ -318,6 +323,21 @@ DJCiT7Platter.publishRate = function(deck) {
     s.detect = (s.detect === null || s.detect === undefined || ratio === 0) ? ratio
         : s.detect + DJCiT7Platter.DETECT_ALPHA * (ratio - s.detect);
     const dev = Math.abs(s.detect - motor);
+    if (!s.engaged && s.snapUntil && nowMs < s.snapUntil) {
+        // Spin Deck snap: ignore the platter while it only winds up to, or down from, the
+        // motor speed. Anything else is a hand on the platter and is handled as usual.
+        const top = s.snapDir === "start" ? motor : s.snapFrom;
+        if (ratio >= -DJCiT7Platter.ENGAGE_TOL && ratio <= top + DJCiT7Platter.ENGAGE_TOL) {
+            if ((s.snapDir === "start" && Math.abs(ratio - motor) < DJCiT7Platter.RELEASE_TOL) ||
+                    (s.snapDir === "stop" && ratio === 0)) {
+                s.snapUntil = 0; // caught up
+            }
+            s.devSince = null;
+            s.farLast = false;
+            return;
+        }
+        s.snapUntil = 0;
+    }
     if (!s.engaged) {
         // One far-off reading can be a wrap misread during a delivery stall, so a hard
         // engage needs two in a row, or a real stop (0).
@@ -436,15 +456,11 @@ DJCiT7Platter.syncTransport = function(deck) {
         const playing = engine.getValue(group, "play") > 0;
         const st = DJCiT7Platter.decks[deck];
         if (st.motorOn !== playing) {
-            // Motor start/stop: the vinyl lags the motor, so it drives the audio until it
-            // reaches the new speed. scratch2 starts from the vinyl's current speed.
-            let v = st.velTicksPerSec / DJCiT7Platter.NOMINAL_TPS;
-            if (!isFinite(v) || Math.abs(v) < DJCiT7Platter.RATE_EPSILON) {
-                v = 0;
-            }
-            engine.setValue(group, "scratch2", v);
-            engine.setValue(group, "scratch2_enable", 1);
-            DJCiT7Platter.engage(deck);
+            // Spin Deck snap: the music starts or stops at once; the platter catches up.
+            st.snapFrom = DJCiT7Platter.motorRatio(deck);
+            DJCiT7Platter.release(deck);
+            st.snapDir = playing ? "start" : "stop";
+            st.snapUntil = Date.now() + DJCiT7Platter.SNAP_GRACE_MS;
         }
         DJCiT7Platter.setMotorSpeed(deck, engine.getValue(group, "rate_ratio"));
         DJCiT7Platter.setMotor(deck, playing);
