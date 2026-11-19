@@ -1,0 +1,9 @@
+name: 💡 Idea for Spin Deck
+description: Something you'd like Spin Deck to do
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+    validations:
+      required: true

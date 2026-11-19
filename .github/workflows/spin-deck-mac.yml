@@ -123,3 +123,48 @@ jobs:
           name: spin-deck-mac-${{ matrix.slug }}
           path: build/*.dmg
           retention-days: 30
+
+  publish:
+    # Puts the newest Mac apps on the "beta" download page with fixed names, so
+    # the download links never change:
+    #   https://github.com/XTRAGOODLABS/spin-deck/releases/download/beta/Spin-Deck-Apple-Silicon.dmg
+    #   https://github.com/XTRAGOODLABS/spin-deck/releases/download/beta/Spin-Deck-Intel.dmg
+    needs: mac
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Get the Mac apps
+        uses: actions/download-artifact@v4
+        with:
+          pattern: spin-deck-mac-*
+          path: built
+
+      - name: Give them fixed names
+        run: |
+          mkdir -p release
+          cp built/spin-deck-mac-apple-silicon/*.dmg release/Spin-Deck-Apple-Silicon.dmg
+          cp built/spin-deck-mac-intel/*.dmg release/Spin-Deck-Intel.dmg
+          ls -la release
+
+      - name: Publish the beta download
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: beta
+          name: Spin Deck beta
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+          files: release/*.dmg
+          body: |
+            **Spin Deck by XTRAGOODLABS: free DJ app for Mac (beta).**
+
+            - Apple Silicon Macs (M1, M2, M3, M4): **Spin-Deck-Apple-Silicon.dmg**
+            - Older Intel Macs: **Spin-Deck-Intel.dmg**
+
+            The app is not signed with an Apple developer account yet. The first time you open it,
+            go to System Settings → Privacy & Security and click **Open Anyway**.
+
+            This download is updated automatically with every change. Built on Mixxx (GPL-2.0-or-later).
+            Questions or bugs: DM @djhellojoey on Instagram, or use Issues.

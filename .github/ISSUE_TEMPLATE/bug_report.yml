@@ -1,0 +1,30 @@
+name: 🐞 Report a bug in Spin Deck
+description: Something in Spin Deck didn't work
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you press or do, and what went wrong?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+  - type: input
+    id: mac
+    attributes:
+      label: Your Mac
+      description: For example "M4 Mac mini, macOS 15" or "Intel MacBook Pro"
+  - type: input
+    id: controller
+    attributes:
+      label: Controller (if any)
+      description: For example "Hercules Inpulse T7"
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Drag a screenshot here if you have one
