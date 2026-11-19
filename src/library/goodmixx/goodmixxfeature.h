@@ -21,6 +21,7 @@
 #include "library/libraryfeature.h"
 #include "preferences/usersettings.h"
 #include "track/track_decl.h"
+#include "track/trackid.h"
 #include "util/parented_ptr.h"
 
 class ControlObject;
@@ -45,6 +46,7 @@ class GoodMixxFeature : public LibraryFeature {
 
   public slots:
     void activate() override;
+    void activateChild(const QModelIndex& index) override;
     void onRightClick(const QPoint& globalPos) override;
 
   private slots:
@@ -58,13 +60,18 @@ class GoodMixxFeature : public LibraryFeature {
     void undoLast();
     void importFromGoodMixxApp(bool tellUser);
     void showSign(const QString& headline, const QString& detail, bool good);
-    int ensurePlaylist();
+    int ensurePlaylist(const QString& name);
+    void fillPlaylist(int playlistId, const QList<TrackId>& ids);
+    void updateLabels(int proven, int matches);
+    void showPlaylist(int playlistId);
     QString nameOf(const TrackPointer& pTrack) const;
 
     goodmixx::Store m_store;
     parented_ptr<TreeItemModel> m_pSidebarModel;
     PlaylistTableModel* m_pModel;
-    int m_playlistId;
+    int m_playlistId;        // both lists
+    int m_provenPlaylistId;  // songs that worked before
+    int m_matchesPlaylistId; // tempo and key matches
     int m_lastDeck;
 
     std::vector<std::unique_ptr<ControlPushButton>> m_saveButtons;

@@ -24,9 +24,10 @@ comes from DJ Aquarobotics.
 - **Save a good mix:** on the Inpulse T7, hold SHIFT and press ASSIST on the
   deck you just mixed in. A big "GOOD MIX SAVED" sign shows on screen and that
   deck's pads flash green.
-- **What's next:** click **GOOD MIXX** in the library sidebar. Songs that
-  already worked after the playing song come first, then songs with a close
-  tempo and a matching key.
+- **What's next:** click **GOOD MIXX** in the library sidebar. Under it,
+  **✓ Good mixes** lists songs that already worked after the playing song, and
+  **Suggestions** lists songs with a close tempo and a matching key. Clicking
+  GOOD MIXX itself shows both, good mixes first.
 - **Undo or bring in old mixes:** right-click **GOOD MIXX** in the sidebar.
   Spin Deck brings in the GOOD MIXX app's saved mixes the first time it starts.
 - Other controllers can use `[GoodMixx],save_deck1`-`save_deck4`,

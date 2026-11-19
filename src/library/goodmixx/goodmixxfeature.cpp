@@ -35,6 +35,8 @@ namespace {
 
 const QString kGroup = QStringLiteral("[GoodMixx]");
 const QString kPlaylistName = QStringLiteral("__SPINDECK_GOODMIXX__");
+const QString kProvenPlaylistName = QStringLiteral("__SPINDECK_GOODMIXX_PROVEN__");
+const QString kMatchesPlaylistName = QStringLiteral("__SPINDECK_GOODMIXX_MATCHES__");
 const ConfigKey kImportedKey(QStringLiteral("[GoodMixx]"), QStringLiteral("imported"));
 constexpr int kDecks = 4;
 constexpr int kMaxMatches = 25;
@@ -79,11 +81,16 @@ GoodMixxFeature::GoodMixxFeature(Library* pLibrary, UserSettingsPointer pConfig)
                   "mixxx.db.model.goodmixx",
                   /*keep hidden tracks*/ false)),
           m_playlistId(-1),
+          m_provenPlaylistId(-1),
+          m_matchesPlaylistId(-1),
           m_lastDeck(0),
           m_pRefreshTimer(new QTimer(this)),
           m_pSavedDeckTimer(new QTimer(this)),
           m_pSignTimer(new QTimer(this)) {
-    m_pSidebarModel->setRootItem(TreeItem::newRoot(this));
+    std::unique_ptr<TreeItem> pRoot = TreeItem::newRoot(this);
+    pRoot->appendChild(tr("✓ Good mixes"), 0);
+    pRoot->appendChild(tr("Suggestions"), 1);
+    m_pSidebarModel->setRootItem(std::move(pRoot));
 
     m_store.load();
     if (m_pConfig->getValue<int>(kImportedKey, 0) == 0) {
@@ -159,12 +166,42 @@ void GoodMixxFeature::bindLibraryWidget(WLibrary* pLibraryWidget, KeyboardEventF
     }
 }
 
-void GoodMixxFeature::activate() {
+void GoodMixxFeature::showPlaylist(int playlistId) {
     slotRefresh();
     emit saveModelState();
-    m_pModel->selectPlaylist(ensurePlaylist());
+    m_pModel->selectPlaylist(playlistId);
     emit showTrackModel(m_pModel);
     emit enableCoverArtDisplay(true);
+}
+
+void GoodMixxFeature::activate() {
+    showPlaylist(ensurePlaylist(kPlaylistName));
+}
+
+void GoodMixxFeature::activateChild(const QModelIndex& index) {
+    const int row = index.data(TreeItemModel::kDataRole).toInt();
+    showPlaylist(ensurePlaylist(row == 0 ? kProvenPlaylistName : kMatchesPlaylistName));
+}
+
+void GoodMixxFeature::updateLabels(int proven, int matches) {
+    const QModelIndex provenIndex = m_pSidebarModel->index(0, 0);
+    const QModelIndex matchesIndex = m_pSidebarModel->index(1, 0);
+    m_pSidebarModel->setData(provenIndex, tr("✓ Good mixes (%1)").arg(proven), Qt::DisplayRole);
+    m_pSidebarModel->setData(matchesIndex, tr("Suggestions (%1)").arg(matches), Qt::DisplayRole);
+}
+
+void GoodMixxFeature::fillPlaylist(int playlistId, const QList<TrackId>& ids) {
+    if (playlistId < 0) {
+        return;
+    }
+    TrackCollection* pCollection = m_pLibrary->trackCollectionManager()->internalCollection();
+    QSqlQuery clear(pCollection->database());
+    clear.prepare(QStringLiteral("DELETE FROM PlaylistTracks WHERE playlist_id = :id"));
+    clear.bindValue(QStringLiteral(":id"), playlistId);
+    clear.exec();
+    if (!ids.isEmpty()) {
+        pCollection->getPlaylistDAO().appendTracksToPlaylist(ids, playlistId);
+    }
 }
 
 void GoodMixxFeature::onRightClick(const QPoint& globalPos) {
@@ -205,22 +242,25 @@ QString GoodMixxFeature::nameOf(const TrackPointer& pTrack) const {
     return goodmixx::songId(pTrack->getArtist(), title);
 }
 
-int GoodMixxFeature::ensurePlaylist() {
-    if (m_playlistId >= 0) {
-        return m_playlistId;
+int GoodMixxFeature::ensurePlaylist(const QString& name) {
+    int* pId = name == kProvenPlaylistName
+            ? &m_provenPlaylistId
+            : (name == kMatchesPlaylistName ? &m_matchesPlaylistId : &m_playlistId);
+    if (*pId >= 0) {
+        return *pId;
     }
     PlaylistDAO& playlists =
             m_pLibrary->trackCollectionManager()->internalCollection()->getPlaylistDAO();
-    int id = playlists.getPlaylistIdFromName(kPlaylistName);
+    int id = playlists.getPlaylistIdFromName(name);
     if (id < 0) {
-        id = playlists.createPlaylist(kPlaylistName, PlaylistDAO::PLHT_GOOD_MIXX);
+        id = playlists.createPlaylist(name, PlaylistDAO::PLHT_GOOD_MIXX);
     }
-    m_playlistId = id;
+    *pId = id;
     return id;
 }
 
 void GoodMixxFeature::slotRefresh() {
-    const int playlistId = ensurePlaylist();
+    const int playlistId = ensurePlaylist(kPlaylistName);
     if (playlistId < 0) {
         return;
     }
@@ -234,7 +274,8 @@ void GoodMixxFeature::slotRefresh() {
     }
     TrackPointer pCurrent = playerInfo.getTrackInfo(PlayerManager::groupForDeck(deck));
 
-    QList<TrackId> ids;
+    QList<TrackId> provenIds;
+    QList<TrackId> matchIds;
     if (pCurrent) {
         const QString current = nameOf(pCurrent);
         double currentBpm = pCurrent->getBpm();
@@ -287,7 +328,7 @@ void GoodMixxFeature::slotRefresh() {
             const TrackId id = candidates[index].id;
             if (!taken.contains(id)) {
                 taken.insert(id);
-                ids.append(id);
+                provenIds.append(id);
             }
         }
 
@@ -317,20 +358,18 @@ void GoodMixxFeature::slotRefresh() {
                 return a.score > b.score;
             });
             for (size_t i = 0; i < matches.size() && i < static_cast<size_t>(kMaxMatches); ++i) {
-                ids.append(matches[i].id);
+                matchIds.append(matches[i].id);
             }
         }
     }
 
-    // Replace the list.
-    QSqlQuery clear(pCollection->database());
-    clear.prepare(QStringLiteral("DELETE FROM PlaylistTracks WHERE playlist_id = :id"));
-    clear.bindValue(QStringLiteral(":id"), playlistId);
-    clear.exec();
-    if (!ids.isEmpty()) {
-        pCollection->getPlaylistDAO().appendTracksToPlaylist(ids, playlistId);
-    }
-    if (m_pModel->getPlaylist() == playlistId) {
+    // Replace the lists: both together, and each one on its own.
+    fillPlaylist(playlistId, provenIds + matchIds);
+    fillPlaylist(ensurePlaylist(kProvenPlaylistName), provenIds);
+    fillPlaylist(ensurePlaylist(kMatchesPlaylistName), matchIds);
+    updateLabels(static_cast<int>(provenIds.size()), static_cast<int>(matchIds.size()));
+    const int shown = m_pModel->getPlaylist();
+    if (shown == playlistId || shown == m_provenPlaylistId || shown == m_matchesPlaylistId) {
         m_pModel->select();
     }
 }
