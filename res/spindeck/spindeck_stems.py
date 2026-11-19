@@ -133,16 +133,44 @@ def separate(song, work, ffmpeg):
                     "-vn", "-ar", "44100", "-ac", "2", wav], check=True)
     os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
     import torch
-    device = "mps" if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available() else "cpu"
     from demucs.separate import main as demucs_main
-    demucs_main(["-n", "htdemucs", "-d", device, "-o", work,
-                 "--filename", "{stem}.{ext}", wav])
+    devices = ["cpu"]
+    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+        devices = ["mps", "cpu"]  # try the Mac's graphics chip first, then the main chip
+    last = None
+    for device in devices:
+        try:
+            say("STATUS", "splitting on " + ("graphics chip" if device == "mps" else "main chip"))
+            demucs_main(["-n", "htdemucs", "-d", device, "-o", work,
+                         "--filename", "{stem}.{ext}", wav])
+            last = None
+            break
+        except SystemExit as e:  # Demucs exits instead of raising on some errors
+            last = RuntimeError("the splitter stopped (code %s)" % e.code)
+        except Exception as e:
+            last = e
+        log_error("splitting on " + device)
+    if last:
+        raise last
     folder = os.path.join(work, "htdemucs")
     parts = {key: os.path.join(folder, key + ".wav") for key, _, _ in STEMS}
     missing = [k for k, p in parts.items() if not os.path.exists(p)]
     if missing:
         raise RuntimeError("Demucs did not make: " + ", ".join(missing))
     return parts
+
+
+def log_error(where):
+    """Keep the full error for troubleshooting, next to the stem splitter."""
+    import traceback
+    folder = os.path.join(os.path.expanduser("~/Library/Application Support/Spin Deck/stems"))
+    try:
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, "last-error.txt"), "a") as f:
+            f.write("---- %s (%s)\n" % (where, sys.argv[1:]))
+            f.write(traceback.format_exc())
+    except Exception:
+        pass
 
 
 def output_path(song, out_folder):
@@ -182,7 +210,8 @@ def main():
         say("DONE", target)
         return 0
     except Exception as e:  # report and stop; Spin Deck shows the message
-        say("ERROR", str(e).replace("\n", " ")[:300])
+        log_error("making stems")
+        say("ERROR", (type(e).__name__ + ": " + str(e)).replace("\n", " ")[:200])
         return 1
 
 
