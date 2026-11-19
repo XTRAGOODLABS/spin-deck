@@ -134,9 +134,10 @@ def separate(song, work, ffmpeg):
     os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
     import torch
     from demucs.separate import main as demucs_main
+    # The splitter's model is too big for the Mac's graphics chip ("Output channels >
+    # 65536 not supported at the MPS device"), so it runs on the main chip.
     devices = ["cpu"]
-    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
-        devices = ["mps", "cpu"]  # try the Mac's graphics chip first, then the main chip
+    torch.set_num_threads(max(1, os.cpu_count() or 1))
     last = None
     for device in devices:
         try:
