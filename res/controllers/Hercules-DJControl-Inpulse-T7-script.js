@@ -381,6 +381,23 @@ DJCiT7.Deck = function(number) {
     this.paramDownButton = nudgeButton(-1);
     this.paramUpButton = nudgeButton(1);
 
+    // Spin Deck: SHIFT + PARAM left turns Quantize on or off for this deck (cue points and
+    // loops snap to the beat grid while it is on). Its lamp is lit while Quantize is on.
+    const paramDownNudge = this.paramDownButton.input;
+    this.paramDownButton.input = function(channel, control, value, status, groupName) {
+        if (status === shifted && value > 0) {
+            engine.setValue(group, "quantize", engine.getValue(group, "quantize") ? 0 : 1);
+            return;
+        }
+        paramDownNudge.call(this, channel, control, value, status, groupName);
+    };
+    const quantizeLamp = function(value) {
+        midi.sendShortMsg(plain, 0x54, value ? 0x7F : 0x00);
+        midi.sendShortMsg(shifted, 0x54, value ? 0x7F : 0x00);
+    };
+    engine.makeConnection(group, "quantize", quantizeLamp);
+    quantizeLamp(engine.getValue(group, "quantize"));
+
     // Browser knob and library buttons.
     this.browseEncoder = new components.Encoder({
         input: function(_channel, _control, value) {

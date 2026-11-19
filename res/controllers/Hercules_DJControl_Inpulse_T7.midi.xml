@@ -308,7 +308,7 @@
             <control>
                 <group>[Channel1]</group>
                 <key>DJCiT7.deck1.paramDownButton.input</key>
-                <description>SHIFT + PARAM left, deck 1: ends the slow-down if SHIFT was pressed while held</description>
+                <description>SHIFT + PARAM left, deck 1: Quantize on/off (Spin Deck); also ends a slow-down</description>
                 <status>0x94</status>
                 <midino>0x54</midino>
                 <options>
@@ -2244,7 +2244,7 @@
             <control>
                 <group>[Channel2]</group>
                 <key>DJCiT7.deck2.paramDownButton.input</key>
-                <description>SHIFT + PARAM left, deck 2: ends the slow-down if SHIFT was pressed while held</description>
+                <description>SHIFT + PARAM left, deck 2: Quantize on/off (Spin Deck); also ends a slow-down</description>
                 <status>0x95</status>
                 <midino>0x54</midino>
                 <options>
