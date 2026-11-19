@@ -2273,13 +2273,13 @@ if(APPLE AND MACOS_BUNDLE)
   set(MIXXX_INSTALL_BINDIR "${CMAKE_INSTALL_BINDIR}")
   set(
     MACOS_BUNDLE_NAME
-    Mixxx
+    SpinDeck
     CACHE STRING
     "The macOS app bundle and executable name"
   )
   set(
     MACOS_BUNDLE_IDENTIFIER
-    org.mixxx.mixxx
+    com.xtragoodlabs.spindeck
     CACHE STRING
     "The macOS app bundle identifier"
   )
@@ -5479,7 +5479,7 @@ configure_file(
 )
 
 # Packaging
-set(CPACK_PACKAGE_NAME "Mixxx")
+set(CPACK_PACKAGE_NAME "SpinDeck")
 set(CPACK_PACKAGE_VENDOR "Mixxx Project")
 # TODO: Split this into Maintainer field: core-team@mixxx.org for package issues
 # and Uploaders field for personal signing email per Debian Policy.

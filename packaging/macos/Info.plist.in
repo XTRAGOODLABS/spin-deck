@@ -15,10 +15,10 @@
     <string>@MACOS_BUNDLE_IDENTIFIER@</string>
 
     <key>CFBundleName</key>
-    <string>@MACOS_BUNDLE_NAME@</string>
+    <string>Spin Deck</string>
 
     <key>CFBundleDisplayName</key>
-    <string>@MACOS_BUNDLE_NAME@</string>
+    <string>Spin Deck</string>
 
     <key>CFBundleVersion</key>
     <string>@MACOS_BUNDLE_VERSION@</string>
@@ -27,7 +27,7 @@
     <string>@MACOS_BUNDLE_SHORTVERSION@</string>
 
     <key>NSHumanReadableCopyright</key>
-    <string>Copyright © 2001-@MIXXX_YEAR@ Mixxx Development Team</string>
+    <string>Spin Deck by XTRAGOODLABS. Built on Mixxx, Copyright © 2001-@MIXXX_YEAR@ Mixxx Development Team (GPL-2.0-or-later)</string>
 
     <key>NSMicrophoneUsageDescription</key>
     <string>Mixxx requires microphone access for microphone and vinyl input.</string>
