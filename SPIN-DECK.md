@@ -2,7 +2,7 @@
 
 **Website and download:** https://xtragoodlabs.github.io/spin-deck
 
-**Feature map:** [FEATURE-MAP.md](FEATURE-MAP.md)
+**Feature map:** [FEATURE-MAP.md](FEATURE-MAP.md) · **Inpulse T7 control map:** [T7-MAP.md](T7-MAP.md)
 
 Spin Deck is a DJ app from XTRAGOODLABS, part of the Crate OS family.
 
