@@ -1395,6 +1395,8 @@ add_library(
   src/library/analysis/dlganalysis.cpp
   src/library/analysis/dlganalysis.ui
   src/library/autodj/autodjfeature.cpp
+  src/library/goodmixx/goodmixxfeature.cpp
+  src/library/goodmixx/goodmixxstore.cpp
   src/library/autodj/autodjprocessor.cpp
   src/library/autodj/dlgautodj.cpp
   src/library/autodj/dlgautodj.ui

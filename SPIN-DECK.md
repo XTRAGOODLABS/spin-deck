@@ -16,10 +16,25 @@ General Public License, version 2 or later, and so is Spin Deck. See
   (github.com/Infinite-Grok/mixxx-hercules-t7, GPL-2.0-or-later), and builds on
   the Inpulse 500 setup in Mixxx by Ev3nt1ne, DJ Phatso and resetreboot.
 
+## GOOD MIXX
+
+Remember the mixes that work and get next-song suggestions. The GOOD MIXX idea
+comes from DJ Aquarobotics.
+
+- **Save a good mix:** on the Inpulse T7, hold SHIFT and press ASSIST on the
+  deck you just mixed in. A big "GOOD MIX SAVED" sign shows on screen and that
+  deck's pads flash green.
+- **What's next:** click **GOOD MIXX** in the library sidebar. Songs that
+  already worked after the playing song come first, then songs with a close
+  tempo and a matching key.
+- **Undo or bring in old mixes:** right-click **GOOD MIXX** in the sidebar.
+  Spin Deck brings in the GOOD MIXX app's saved mixes the first time it starts.
+- Other controllers can use `[GoodMixx],save_deck1`-`save_deck4`,
+  `[GoodMixx],undo` and `[GoodMixx],saved_deck`.
+
 ## Coming to Spin Deck
 
-- **GOOD MIXX**: remember the mixes that work and get next-song suggestions.
-  The GOOD MIXX idea comes from DJ Aquarobotics.
+- **Make Stems**: split songs into vocals, drums, bass and other.
 - **BeatDeck**: a beat grid that plays in time with the decks.
 
 ## Mac download

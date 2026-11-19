@@ -114,6 +114,7 @@ DJCiT7.COLOURS = {
     effectOff: 0x40,
     effectOn: 0x60,
     key: 0x52,
+    goodMix: 0x1C,
 };
 
 DJCiT7.deck1 = null;
@@ -389,7 +390,8 @@ DJCiT7.Deck = function(number) {
     });
     this.loadButton = button({inKey: "LoadSelectedTrack"});
     this.assistButton = new components.Button({group: "[Library]", inKey: "GoToItem"});
-    this.autoDjButton = new components.Button({group: "[Library]", inKey: "AutoDjAddBottom"});
+    // Spin Deck: SHIFT + ASSIST saves a GOOD MIX (this deck's song worked after the other deck's).
+    this.autoDjButton = new components.Button({group: "[GoodMixx]", inKey: `save_deck${number}`});
     this.backButton = new components.Button({group: "[Library]", inKey: "MoveFocusBackward"});
     this.maximizeLibraryButton = new components.Button({group: "[Skin]", type: toggle, inKey: "show_maximized_library"});
 
@@ -1026,11 +1028,46 @@ DJCiT7.FX_LIGHTS_OFF = [0xF0, 0x00, 0x01, 0x4E, 0x20, 0x02, 0x07, 0x7F, 0x00, 0x
 /**
  * Mixxx calls this when the mapping is loaded. It can run again without a shutdown in between.
  */
+/**
+ * Spin Deck: flash a deck's pads green when a GOOD MIX is saved from it,
+ * then put the pad lamps back the way they were.
+ * @param {number} value The deck number the mix was saved from (1-4), or 0.
+ */
+DJCiT7.goodMixSaved = function(value) {
+    const deck = value === 1 ? DJCiT7.deck1 : (value === 2 ? DJCiT7.deck2 : null);
+    if (!deck || !deck.padPages) {
+        return;
+    }
+    const pads = deck.padPages[deck.page];
+    const paint = function(on) {
+        pads.forEach(function(pad) {
+            if (on) {
+                pad.send(DJCiT7.COLOURS.goodMix);
+            } else {
+                pad.trigger();
+            }
+        });
+    };
+    paint(true);
+    engine.beginTimer(250, function() {
+        paint(false);
+    }, true);
+    engine.beginTimer(400, function() {
+        paint(true);
+    }, true);
+    engine.beginTimer(1200, function() {
+        paint(false);
+    }, true);
+};
+
 DJCiT7.init = function() {
     DJCiT7.release();
     DJCiT7.crossfaderState = {enabled: true, msb: 0, pickup: false, lastPosition: null};
     DJCiT7.deck1 = new DJCiT7.Deck(1);
     DJCiT7.deck2 = new DJCiT7.Deck(2);
+    if (engine.getValue("[GoodMixx]", "saved_deck") !== undefined) {
+        engine.makeConnection("[GoodMixx]", "saved_deck", DJCiT7.goodMixSaved);
+    }
     DJCiT7.buildMixer();
     DJCiT7.deck1.showPage(1);
     DJCiT7.deck2.showPage(1);

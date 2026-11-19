@@ -228,7 +228,7 @@
             <control>
                 <group>[Channel1]</group>
                 <key>DJCiT7.deck1.autoDjButton.input</key>
-                <description>SHIFT + ASSIST/PREP, deck 1: add the selected track to the Auto DJ list</description>
+                <description>SHIFT + ASSIST/PREP, deck 1: save a GOOD MIX (Spin Deck)</description>
                 <status>0x94</status>
                 <midino>0x50</midino>
                 <options>
@@ -2164,7 +2164,7 @@
             <control>
                 <group>[Channel2]</group>
                 <key>DJCiT7.deck2.autoDjButton.input</key>
-                <description>SHIFT + ASSIST/PREP, deck 2: add the selected track to the Auto DJ list</description>
+                <description>SHIFT + ASSIST/PREP, deck 2: save a GOOD MIX (Spin Deck)</description>
                 <status>0x95</status>
                 <midino>0x50</midino>
                 <options>

@@ -8,6 +8,7 @@
 #include "controllers/keyboard/keyboardeventfilter.h"
 #include "library/analysis/analysisfeature.h"
 #include "library/autodj/autodjfeature.h"
+#include "library/goodmixx/goodmixxfeature.h"
 #include "library/banshee/bansheefeature.h"
 #include "library/browse/browsefeature.h"
 #include "library/dateformatbroadcaster.h"
@@ -100,6 +101,9 @@ Library::Library(
 
     m_pAutoDJFeature = make_parented<AutoDJFeature>(this, m_pConfig, pPlayerManager);
     addFeature(m_pAutoDJFeature);
+
+    // Spin Deck: GOOD MIXX (idea by DJ Aquarobotics)
+    addFeature(new GoodMixxFeature(this, m_pConfig));
 
     m_pPlaylistFeature = make_parented<PlaylistFeature>(this, UserSettingsPointer(m_pConfig));
     addFeature(m_pPlaylistFeature);

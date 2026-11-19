@@ -20,6 +20,8 @@ class PlaylistDAO : public QObject, public virtual DAO {
         PLHT_NOT_HIDDEN = 0,
         PLHT_AUTO_DJ = 1,
         PLHT_SET_LOG = 2,
+        PLHT_GOOD_MIXX = 3, // Spin Deck: GOOD MIXX suggestions list
+
         PLHT_UNKNOWN = -1
     };
 
