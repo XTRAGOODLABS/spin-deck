@@ -75,6 +75,7 @@ jobs:
           test -f /System/Library/Fonts/Supplemental/Impact.ttf
           python3 -m pip install --quiet --break-system-packages pillow || python3 -m pip install --quiet --user pillow
           python3 packaging/spindeck/make-icon.py
+          python3 packaging/spindeck/brand-skins.py
 
       - name: Upload icon preview
         if: matrix.slug == 'apple-silicon'

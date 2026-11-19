@@ -315,6 +315,9 @@ void GoodMixxFeature::slotRefresh() {
 
         QSet<TrackId> taken;
         taken.insert(pCurrent->getId());
+        // Each song only once, even if the library has two files of it.
+        QSet<QString> takenNames;
+        takenNames.insert(goodmixx::matchKey(current));
 
         // 1. Songs that already worked after this one.
         for (const auto& link : m_store.linksFrom(current)) {
@@ -326,8 +329,10 @@ void GoodMixxFeature::slotRefresh() {
                 continue; // that song is not in the library
             }
             const TrackId id = candidates[index].id;
-            if (!taken.contains(id)) {
+            const QString name = goodmixx::matchKey(candidates[index].song);
+            if (!taken.contains(id) && !takenNames.contains(name)) {
                 taken.insert(id);
+                takenNames.insert(name);
                 provenIds.append(id);
             }
         }
@@ -336,11 +341,13 @@ void GoodMixxFeature::slotRefresh() {
         if (currentBpm > 0) {
             struct Scored {
                 TrackId id;
+                QString name;
                 double score;
             };
             std::vector<Scored> matches;
             for (const auto& c : candidates) {
-                if (taken.contains(c.id) || goodmixx::sameSong(c.song, current)) {
+                if (taken.contains(c.id) || takenNames.contains(goodmixx::matchKey(c.song)) ||
+                        goodmixx::sameSong(c.song, current)) {
                     continue;
                 }
                 const double gap = goodmixx::bpmGap(currentBpm, c.bpm);
@@ -352,13 +359,21 @@ void GoodMixxFeature::slotRefresh() {
                     continue; // keys clash
                 }
                 const double keyScore = fit < 0 ? 0.5 : fit;
-                matches.push_back({c.id, keyScore * 10.0 - std::fabs(gap)});
+                matches.push_back(
+                        {c.id, goodmixx::matchKey(c.song), keyScore * 10.0 - std::fabs(gap)});
             }
             std::sort(matches.begin(), matches.end(), [](const Scored& a, const Scored& b) {
                 return a.score > b.score;
             });
-            for (size_t i = 0; i < matches.size() && i < static_cast<size_t>(kMaxMatches); ++i) {
-                matchIds.append(matches[i].id);
+            for (const auto& match : matches) {
+                if (matchIds.size() >= kMaxMatches) {
+                    break;
+                }
+                if (takenNames.contains(match.name)) {
+                    continue; // another file of a song already listed
+                }
+                takenNames.insert(match.name);
+                matchIds.append(match.id);
             }
         }
     }
