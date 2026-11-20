@@ -7,6 +7,7 @@
 #include <QMap>
 #include <vector>
 
+#include "control/pollingcontrolproxy.h"
 #include "effects/backends/effectprocessor.h"
 #include "engine/effects/engineeffect.h"
 #include "engine/effects/engineeffectparameter.h"
@@ -58,11 +59,12 @@ class EchoOutState : public EffectState {
     Ring ring;
     double prevOut = 0;
     double prevFeedback = 0;
+    double prevDelay = 0; // frames, glides when the tempo changes
 };
 
 class EchoOutEffect : public EffectProcessorImpl<EchoOutState> {
   public:
-    EchoOutEffect() = default;
+    EchoOutEffect();
     static QString getId();
     static EffectManifestPointer getManifest();
     void loadEngineEffectParameters(
@@ -78,6 +80,9 @@ class EchoOutEffect : public EffectProcessorImpl<EchoOutState> {
     EngineEffectParameterPointer m_pTime;
     EngineEffectParameterPointer m_pFeedback;
     EngineEffectParameterPointer m_pOut;
+    // The decks, to time the echo to the incoming track.
+    std::vector<PollingControlProxy> m_deckBpm;
+    std::vector<PollingControlProxy> m_deckPlay;
     DISALLOW_COPY_AND_ASSIGN(EchoOutEffect);
 };
 

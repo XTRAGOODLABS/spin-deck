@@ -107,6 +107,14 @@ EchoOutState::EchoOutState(const mixxx::EngineParameters& p)
     ring.allocate(static_cast<SINT>(p.sampleRate() * 5)); // up to 5 s of echo
 }
 
+EchoOutEffect::EchoOutEffect() {
+    for (int deck = 1; deck <= 4; ++deck) {
+        const QString group = QStringLiteral("[Channel%1]").arg(deck);
+        m_deckBpm.emplace_back(group, QStringLiteral("bpm"), ControlFlag::AllowMissingOrInvalid);
+        m_deckPlay.emplace_back(group, QStringLiteral("play"), ControlFlag::AllowMissingOrInvalid);
+    }
+}
+
 QString EchoOutEffect::getId() {
     return QStringLiteral("com.xtragoodlabs.spindeck.echoout");
 }
@@ -159,8 +167,42 @@ void EchoOutEffect::processChannel(EchoOutState* pState,
         const GroupFeatureState& groupFeatures) {
     Ring& ring = pState->ring;
     const SINT frames = p.framesPerBuffer();
-    SINT delay = static_cast<SINT>(beatsToFrames(m_pTime->value(), groupFeatures, p));
-    delay = math_clamp<SINT>(delay, 1, ring.frames - 1);
+
+    // Time the echo to the INCOMING track: the other playing deck. This deck's own
+    // beat is used only when no other deck is playing, or both run at the same tempo.
+    const double ownBeat = groupFeatures.beat_length.has_value()
+            ? groupFeatures.beat_length->seconds
+            : 0.0;
+    double beatSeconds = ownBeat;
+    double mostDifferent = -1;
+    for (size_t d = 0; d < m_deckBpm.size(); ++d) {
+        const double bpm = m_deckBpm[d].get();
+        if (m_deckPlay[d].get() <= 0 || bpm < 20) {
+            continue;
+        }
+        const double beat = 60.0 / bpm;
+        const double diff = ownBeat > 0 ? std::fabs(beat - ownBeat) / ownBeat : 1.0;
+        if (diff > mostDifferent) {
+            mostDifferent = diff;
+            beatSeconds = beat;
+        }
+    }
+    if (ownBeat > 0 && mostDifferent >= 0 && mostDifferent < 0.002) {
+        beatSeconds = ownBeat; // same tempo either way
+    }
+    const double seconds = beatSeconds > 0 ? m_pTime->value() * beatSeconds
+                                           : m_pTime->value();
+    const double target = math_clamp(seconds * p.sampleRate(),
+            1.0,
+            static_cast<double>(ring.frames - 2));
+    if (pState->prevDelay <= 0 || enableState == EffectEnableState::Enabling) {
+        pState->prevDelay = target;
+    }
+    // A big tempo change glides over about a quarter second instead of jumping.
+    const double maxGlide = pState->prevDelay * 0.08;
+    const double newDelay = pState->prevDelay +
+            math_clamp(target - pState->prevDelay, -maxGlide, maxGlide);
+    const SINT delay = static_cast<SINT>(newDelay);
 
     if (enableState == EffectEnableState::Enabling) {
         pState->prevOut = 0;
@@ -176,10 +218,18 @@ void EchoOutEffect::processChannel(EchoOutState* pState,
         const double fb = pState->prevFeedback + (feedback - pState->prevFeedback) * t;
         // The song keeps feeding the echo until the knob is nearly all the way up.
         const double feed = 1.0 - math_clamp((o - 0.6) / 0.4, 0.0, 1.0);
-        const SINT read = (ring.write - delay + ring.frames) % ring.frames;
+        const double dl = pState->prevDelay + (newDelay - pState->prevDelay) * t;
+        double pos = ring.write - dl;
+        if (pos < 0) {
+            pos += ring.frames;
+        }
+        const SINT a = static_cast<SINT>(pos) % ring.frames;
+        const SINT b = (a + 1) % ring.frames;
+        const double frac = pos - std::floor(pos);
         for (int ch = 0; ch < 2; ++ch) {
             const CSAMPLE x = pInput[i * 2 + ch];
-            const CSAMPLE echo = ring.data[read * 2 + ch];
+            const CSAMPLE echo = static_cast<CSAMPLE>(
+                    ring.data[a * 2 + ch] * (1 - frac) + ring.data[b * 2 + ch] * frac);
             pOutput[i * 2 + ch] = static_cast<CSAMPLE>(x * (1.0 - o)) + echo;
             // Soft limit the loop so high feedback never runs away.
             const double fed = x * feed + echo * fb;
@@ -189,6 +239,7 @@ void EchoOutEffect::processChannel(EchoOutState* pState,
     }
     pState->prevOut = out;
     pState->prevFeedback = feedback;
+    pState->prevDelay = newDelay;
     if (enableState == EffectEnableState::Disabling) {
         ring.clear();
     }

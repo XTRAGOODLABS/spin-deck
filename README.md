@@ -69,7 +69,9 @@ Split songs into drums, bass, other and vocals with the free Demucs splitter.
 Four effects made for the FX buttons, with the main move on the effect's knob:
 
 - **Echo Out:** a beat-timed echo. Turn the knob up and the song drops away,
-  leaving only its echo to ride out on.
+  leaving only its echo to ride out on. The echo follows the tempo of the
+  incoming track (the other deck that's playing), so it lands on the new beat even
+  after a big tempo change.
 - **Riser:** turn the knob up for a rising noise sweep while the bass thins out.
 - **Roll:** repeats a slice of the beat from the moment you press it. The knob picks
   the slice, from 1/16 to 1 beat.
