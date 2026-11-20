@@ -9,6 +9,7 @@
 #include "library/trackcollectionmanager.h"
 #include "moc_stemmaker.cpp"
 #include "spindeck/spindecksign.h"
+#include "spindeck/stemswap.h"
 #include "track/trackref.h"
 
 namespace spindeck {
@@ -216,7 +217,9 @@ void StemMaker::finished(int exitCode, QProcess::ExitStatus exitStatus) {
         ++m_done;
         m_lastSong = songName(m_current);
         if (m_pTrackCollectionManager) {
+            // Add the stem file, then put it in the original song's place.
             m_pTrackCollectionManager->getOrAddTrack(TrackRef::fromFilePath(m_lastResult));
+            swapInStems(m_pTrackCollectionManager, m_lastResult, m_current);
         }
     } else {
         ++m_failed;

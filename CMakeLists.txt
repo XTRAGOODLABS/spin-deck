@@ -1400,6 +1400,7 @@ add_library(
   src/spindeck/settingsfolder.cpp
   src/spindeck/spindecksign.cpp
   src/spindeck/stemmaker.cpp
+  src/spindeck/stemswap.cpp
   src/library/autodj/autodjprocessor.cpp
   src/library/autodj/dlgautodj.cpp
   src/library/autodj/dlgautodj.ui

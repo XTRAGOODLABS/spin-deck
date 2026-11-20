@@ -1,4 +1,5 @@
 #include "library/library.h"
+#include "spindeck/stemswap.h"
 
 #include <QApplication>
 #include <QDir>
@@ -101,6 +102,9 @@ Library::Library(
 
     m_pAutoDJFeature = make_parented<AutoDJFeature>(this, m_pConfig, pPlayerManager);
     addFeature(m_pAutoDJFeature);
+
+    // Spin Deck: stem files take the place of the songs they were made from.
+    spindeck::swapInStems(m_pTrackCollectionManager);
 
     // Spin Deck: GOOD MIXX (idea by DJ Aquarobotics)
     addFeature(new GoodMixxFeature(this, m_pConfig));

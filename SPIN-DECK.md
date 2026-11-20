@@ -45,7 +45,10 @@ Split songs into drums, bass, other and vocals with the free Demucs splitter.
   Spin Deck asks to download the splitter (about 2-3 GB, once) into
   `~/Library/Application Support/Spin Deck/stems`. Delete that folder to remove it.
 - Songs are split one at a time in the background; a sign shows progress. Each
-  finished `.stem.mp4` is saved next to the song and added to the library.
+  finished `.stem.mp4` is saved next to the song and takes the song's place in the
+  library: same crates, playlists, hot cues, BPM and key. The original file is left
+  on your drive and hidden from the library, so there is never a second copy to
+  search for.
 - On the Inpulse T7: **VOCAL** plays only the vocals, **INSTRUMENTAL** plays
   only the music (press again for everything), and pad page 3 gives one pad per stem (lit in its colour while it
   plays, dark red while muted).
