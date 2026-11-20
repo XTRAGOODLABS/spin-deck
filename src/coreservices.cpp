@@ -1,5 +1,7 @@
 #include "coreservices.h"
 
+#include <QSqlQuery>
+
 #include <QApplication>
 #include <QFileDialog>
 #include <QProcess>
@@ -597,7 +599,16 @@ void CoreServices::initialize() {
 
     bool musicDirAdded = false;
 
-    if (m_pTrackCollectionManager->internalCollection()->loadRootDirs().isEmpty()) {
+    // Spin Deck: ask for a music folder only on a brand-new library. Someone who
+    // already has songs (added by hand or in crates) is never asked again.
+    bool libraryHasSongs = false;
+    {
+        QSqlQuery query(m_pTrackCollectionManager->internalCollection()->database());
+        libraryHasSongs = query.exec(QStringLiteral("SELECT 1 FROM library LIMIT 1")) &&
+                query.next();
+    }
+    if (!libraryHasSongs &&
+            m_pTrackCollectionManager->internalCollection()->loadRootDirs().isEmpty()) {
 #if defined(Q_OS_IOS) || defined(Q_OS_WASM)
         // On the web and iOS, we are running in a sandbox (a virtual file
         // system on the web). Since we are generally limited to paths within
