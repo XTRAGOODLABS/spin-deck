@@ -51,6 +51,21 @@ Split songs into drums, bass, other and vocals with the free Demucs splitter.
   plays, dark red while muted).
 - **BeatDeck**: a beat grid that plays in time with the decks.
 
+## Skins
+
+Four Spin Deck layouts, picked in **Preferences → Interface → Skin**:
+
+- **Spin Deck CRATE**: the everyday layout. Waveforms on top, turntables, decks,
+  mixer and library.
+- **Spin Deck BOOTH**: for playing out. Huge numbers and big buttons; tap
+  **LIBRARY** to show or hide the song list.
+- **Spin Deck ON AIR**: for radio. Library first, big clock, mic ON AIR button
+  and Auto DJ controls (Auto DJ, Fade Now, Skip).
+- **Spin Deck POCKET**: a small layout for a laptop screen or a side window.
+
+The skins are made by `packaging/spindeck/make-skins.py`; run it again after
+changing it.
+
 ## Mac download
 
 Each change builds a Mac app on GitHub. Open the **Actions** tab, pick the

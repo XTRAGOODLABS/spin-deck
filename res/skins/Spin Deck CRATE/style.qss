@@ -1,0 +1,50 @@
+/* Spin Deck skin: CRATE. Made by packaging/spindeck/make-skins.py */
+#Mixxx, WWidget, QWidget#SkinBody { background-color: #0b0b0b; color: #f2f2ee; }
+QWidget { font-family: "Archivo", "Open Sans", "Helvetica Neue", Arial, sans-serif; color: #f2f2ee; }
+#Panel, #DeckPanel, #MixerPanel, #TopBar, #LibSide, #BottomBar { background-color: #141414; border: 1px solid #2c2c2c; border-radius: 10px; }
+#TopBar { border-radius: 0px; border-width: 0px 0px 1px 0px; }
+#Brand { font-family: "Anton", "Impact", sans-serif; font-size: 22px; color: #f2f2ee; padding: 0px 10px; }
+#SkinName { font-size: 12px; color: #a6a6a0; font-weight: bold; padding: 0px 6px; }
+#Title { font-size: 17px; font-weight: bold; color: #f2f2ee; }
+#Artist { font-size: 14px; color: #a6a6a0; }
+#Bpm, #KeyText, #TimeText { font-size: 20px; font-weight: bold; color: #f2f2ee; background-color: #0b0b0b; border: 1px solid #2c2c2c; border-radius: 6px; padding: 2px 6px; }
+#BigBpm, #BigKey, #BigTime { font-family: "Anton", "Impact", sans-serif; font-size: 44px; color: #f2f2ee; background-color: #0b0b0b; border: 2px solid #2c2c2c; border-radius: 10px; }
+#BigTime { color: #3ddc84; }
+#Clock, Time { font-family: "Anton", "Impact", sans-serif; font-size: 22px; color: #f2f2ee; }
+#BigClock { font-family: "Anton", "Impact", sans-serif; font-size: 54px; color: #f2f2ee; }
+#Small { font-size: 11px; color: #a6a6a0; font-weight: bold; }
+WPushButton { background-color: #1b1b1b; color: #f2f2ee; border: 1px solid #2c2c2c; border-radius: 6px; font-weight: bold; font-size: 12px; padding: 0px; }
+WPushButton:hover { border-color: #a6a6a0; }
+WPushButton[displayValue="1"] { background-color: #3ddc84; color: #000000; border-color: #3ddc84; }
+#Play { font-size: 16px; }
+#Loop { font-size: 11px; }
+#GoodMix { font-size: 10px; }
+#Play[displayValue="1"] { background-color: #3ddc84; border-color: #3ddc84; color: #000000; }
+#Cue[displayValue="1"] { background-color: #ff8a00; border-color: #ff8a00; color: #000000; }
+#Sync[displayValue="1"] { background-color: #3ddc84; border-color: #3ddc84; color: #000000; }
+#GoodMix { border: 2px solid #3ddc84; color: #3ddc84; }
+#GoodMix[displayValue="1"], #GoodMix:pressed { background-color: #3ddc84; color: #000000; }
+#Rec[displayValue="1"], #OnAir[displayValue="1"] { background-color: #ff3b30; border-color: #ff3b30; color: #ffffff; }
+#StemDrums[displayValue="0"] { color: #3ddc84; border-color: #3ddc84; }
+#StemBass[displayValue="0"] { color: #f2a65a; border-color: #f2a65a; }
+#StemOther[displayValue="0"] { color: #f0a6cf; border-color: #f0a6cf; }
+#StemVocals[displayValue="0"] { color: #8fcdf2; border-color: #8fcdf2; }
+#StemDrums[displayValue="1"], #StemBass[displayValue="1"], #StemOther[displayValue="1"], #StemVocals[displayValue="1"] { background-color: #5a1a1a; color: #ff8a80; border-color: #ff3b30; }
+WHotcueButton { background-color: #1b1b1b; border: 1px solid #2c2c2c; border-radius: 6px; font-weight: bold; font-size: 12px; color: #a6a6a0; }
+WHotcueButton[displayValue="1"], WHotcueButton[displayValue="2"] { color: #000000; background-color: #3ddc84; }
+WTrackProperty, WLabel, WNumber { background: transparent; }
+WSearchLineEdit { background-color: #0b0b0b; color: #f2f2ee; border: 1px solid #2c2c2c; border-radius: 6px; padding: 4px 8px; font-size: 13px; margin: 4px; }
+WLibrarySidebar { background-color: #141414; color: #f2f2ee; border: none; font-size: 13px; outline: none; }
+WLibrarySidebar::item:selected { background-color: #1f3a2a; color: #f2f2ee; }
+WLibraryTableView, WTrackTableView { background-color: #0b0b0b; alternate-background-color: #111111; color: #f2f2ee; border: none; font-size: 13px; selection-background-color: #1f3a2a; selection-color: #f2f2ee; gridline-color: #2c2c2c; }
+QHeaderView { background-color: #141414; }
+QHeaderView::section { background-color: #141414; color: #a6a6a0; border: none; border-right: 1px solid #2c2c2c; padding: 3px 6px; font-weight: bold; font-size: 12px; }
+QScrollBar:vertical { background: #0b0b0b; width: 10px; }
+QScrollBar::handle:vertical { background: #2c2c2c; border-radius: 4px; min-height: 30px; }
+QScrollBar:horizontal { background: #0b0b0b; height: 10px; }
+QScrollBar::handle:horizontal { background: #2c2c2c; border-radius: 4px; min-width: 30px; }
+QScrollBar::add-line, QScrollBar::sub-line { width: 0px; height: 0px; }
+QMenu { background-color: #141414; color: #f2f2ee; border: 1px solid #2c2c2c; }
+QMenu::item:selected { background-color: #1f3a2a; }
+QToolTip { background-color: #141414; color: #f2f2ee; border: 1px solid #2c2c2c; }
+QSplitter::handle { background-color: #0b0b0b; }
