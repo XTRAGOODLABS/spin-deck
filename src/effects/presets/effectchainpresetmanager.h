@@ -96,6 +96,7 @@ class EffectChainPresetManager : public QObject {
 
     void importUserPresets();
     void importDefaultPresets();
+    void importNewSpinDeckPresets();
     void generateDefaultQuickEffectPresets();
     void prependRemainingPresetsToLists();
 

@@ -64,6 +64,23 @@ Split songs into drums, bass, other and vocals with the free Demucs splitter.
   plays, dark red while muted).
 - **BeatDeck**: a beat grid that plays in time with the decks.
 
+## DJ effects
+
+Four effects made for the FX buttons, with the main move on the effect's knob:
+
+- **Echo Out:** a beat-timed echo. Turn the knob up and the song drops away,
+  leaving only its echo to ride out on.
+- **Riser:** turn the knob up for a rising noise sweep while the bass thins out.
+- **Roll:** repeats a slice of the beat from the moment you press it. The knob picks
+  the slice, from 1/16 to 1 beat.
+- **Brake:** a turntable stop. The knob sets how long it takes, from 1/2 to 8 beats.
+
+They come ready as two effect chains, **Spin Deck: Echo Out, Roll, Brake** and
+**Spin Deck: Riser**. Pick one for an effect unit and the T7's FX buttons play them.
+
+Your Mac's own Audio Unit plug-ins are switched off, since most are recording
+tools; this also makes Spin Deck start faster.
+
 ## Skins
 
 Four Spin Deck layouts, picked in **Preferences → Interface → Skin**:

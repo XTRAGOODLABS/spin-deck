@@ -19,7 +19,12 @@ EffectsBackendManager::EffectsBackendManager() {
 
     addBackend(EffectsBackendPointer(new BuiltInBackend()));
 #ifdef __AU_EFFECTS__
-    addBackend(createAudioUnitBackend());
+    // Spin Deck: the Mac's own Audio Unit plug-ins are mostly recording tools that
+    // don't suit DJing, and loading hundreds of them slows every start. They are off
+    // unless SPINDECK_AUDIO_UNITS=1 is set.
+    if (qEnvironmentVariableIntValue("SPINDECK_AUDIO_UNITS") == 1) {
+        addBackend(createAudioUnitBackend());
+    }
 #endif
 #ifdef __LILV__
     addBackend(EffectsBackendPointer(new LV2Backend()));

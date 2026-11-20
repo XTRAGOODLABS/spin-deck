@@ -573,6 +573,32 @@ void EffectChainPresetManager::importDefaultPresets() {
     }
 }
 
+void EffectChainPresetManager::importNewSpinDeckPresets() {
+    const QString savedPresetsPath(
+            m_pConfig->getSettingsPath() + kEffectChainPresetDirectory);
+    const QString defaultPresetsPath(
+            m_pConfig->getResourcePath() + kEffectChainPresetDirectory);
+    QDir().mkpath(savedPresetsPath);
+    QDir defaultChainPresetsDir(defaultPresetsPath);
+    defaultChainPresetsDir.setFilter(QDir::Files | QDir::Readable);
+    const auto fileNames =
+            defaultChainPresetsDir.entryList({QStringLiteral("Spin Deck*.xml")});
+    for (const auto& fileName : fileNames) {
+        const QString copiedFileName = savedPresetsPath + kFolderDelimiter + fileName;
+        if (QFileInfo::exists(copiedFileName)) {
+            continue; // already brought in once; the user may have changed or deleted it
+        }
+        if (!QFile::copy(defaultPresetsPath + kFolderDelimiter + fileName, copiedFileName)) {
+            continue;
+        }
+        EffectChainPresetPointer pPreset = loadPresetFromFile(copiedFileName);
+        if (pPreset && !pPreset->isEmpty() && !m_effectChainPresets.contains(pPreset->name())) {
+            m_effectChainPresets.insert(pPreset->name(), pPreset);
+            m_effectChainPresetsSorted.prepend(pPreset);
+        }
+    }
+}
+
 void EffectChainPresetManager::generateDefaultQuickEffectPresets() {
     // importDefaultPresets should be called before this function
     DEBUG_ASSERT(!m_effectChainPresetsSorted.isEmpty());
@@ -777,6 +803,9 @@ EffectsXmlData EffectChainPresetManager::readEffectsXml(
         // The user can always copy the files again manually or use the Import
         // button in DlgPrefEffects.
         importDefaultPresets();
+    } else {
+        // Spin Deck: chain presets added in an update reach existing users too.
+        importNewSpinDeckPresets();
     }
 
     // Reload order of QuickEffect chain presets

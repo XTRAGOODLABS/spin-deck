@@ -22,6 +22,7 @@
 #include "effects/backends/builtin/distortioneffect.h"
 #include "effects/backends/builtin/echoeffect.h"
 #include "effects/backends/builtin/glitcheffect.h"
+#include "effects/backends/builtin/spindeckeffects.h"
 #include "effects/backends/builtin/keycomparisoneffect.h"
 #include "effects/backends/builtin/loudnesscontoureffect.h"
 #include "effects/backends/builtin/metronomeeffect.h"
@@ -36,6 +37,11 @@
 BuiltInBackend::BuiltInBackend() {
     // Keep this list in a reasonable order
     // Mixing EQs
+    // Spin Deck DJ effects
+    registerEffect<spindeck::EchoOutEffect>();
+    registerEffect<spindeck::RiserEffect>();
+    registerEffect<spindeck::RollEffect>();
+    registerEffect<spindeck::BrakeEffect>();
     registerEffect<Bessel4LVMixEQEffect>();
     registerEffect<Bessel8LVMixEQEffect>();
     registerEffect<LinkwitzRiley8EQEffect>();
