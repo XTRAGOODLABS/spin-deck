@@ -1063,9 +1063,10 @@ DJCiT7.FX_LIGHTS_OFF = [0xF0, 0x00, 0x01, 0x4E, 0x20, 0x02, 0x07, 0x7F, 0x00, 0x
  * Mixxx calls this when the mapping is loaded. It can run again without a shutdown in between.
  */
 /**
- * Spin Deck: the INSTRUMENTAL and VOCAL buttons. INSTRUMENTAL mutes or unmutes the music
- * (drums, bass, other); VOCAL mutes or unmutes the vocals. A button is lit while its part
- * is muted. They only change the sound when a stem file is loaded.
+ * Spin Deck: the INSTRUMENTAL and VOCAL buttons, like djay. INSTRUMENTAL plays only the
+ * music (mutes the vocals); VOCAL plays only the vocals (mutes drums, bass and other).
+ * Press again to bring everything back. A button is lit while it is on.
+ * They only change the sound when a stem file is loaded.
  * @param {number} _channel MIDI channel
  * @param {number} control 0x01 INSTRUMENTAL, 0x02 VOCAL
  * @param {number} value 0x7F pressed, 0x00 released
@@ -1075,7 +1076,7 @@ DJCiT7.Deck.prototype.stemButton = function(_channel, control, value) {
         return;
     }
     const number = this.deckNumbers[0];
-    const stems = control === 0x02 ? [4] : [1, 2, 3];
+    const stems = control === 0x02 ? [1, 2, 3] : [4];
     const anyPlaying = stems.some(function(stem) {
         return !engine.getValue(`[Channel${number}_Stem${stem}]`, "mute");
     });
@@ -1102,8 +1103,8 @@ DJCiT7.Deck.prototype.connectStemLamps = function() {
         });
         update();
     };
-    lamp(0x01, [1, 2, 3]);
-    lamp(0x02, [4]);
+    lamp(0x01, [4]); // INSTRUMENTAL is on while the vocals are muted
+    lamp(0x02, [1, 2, 3]); // VOCAL is on while the music is muted
 };
 
 /**

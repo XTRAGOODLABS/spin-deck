@@ -28,8 +28,8 @@ deck=[("SYNC","Sync on / off","Make sync leader"),
 ("BROWSE knob","Scroll · Push: load song","Scroll 10 at a time"),
 ("ASSIST","Open selected item","SAVE A GOOD MIX*"),
 ("BACK","Back to the song list","Big library view"),
-("VOCAL","Mute / unmute vocals*","same"),
-("INSTRUMENTAL","Mute / unmute the music*","same"),
+("VOCAL","Vocals only, on / off*","same"),
+("INSTRUMENTAL","Music only, on / off*","same"),
 ("PLATTER","Scratch and nudge","same"),
 ("PAD MODE 1–4","Pad pages 1–4","Pad pages 5–8")]
 x,y,w=50,150,1150; rh=58

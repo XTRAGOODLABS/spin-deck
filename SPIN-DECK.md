@@ -46,8 +46,8 @@ Split songs into drums, bass, other and vocals with the free Demucs splitter.
   `~/Library/Application Support/Spin Deck/stems`. Delete that folder to remove it.
 - Songs are split one at a time in the background; a sign shows progress. Each
   finished `.stem.mp4` is saved next to the song and added to the library.
-- On the Inpulse T7: **VOCAL** mutes the vocals, **INSTRUMENTAL** mutes the
-  music, and pad page 3 gives one pad per stem (lit in its colour while it
+- On the Inpulse T7: **VOCAL** plays only the vocals, **INSTRUMENTAL** plays
+  only the music (press again for everything), and pad page 3 gives one pad per stem (lit in its colour while it
   plays, dark red while muted).
 - **BeatDeck**: a beat grid that plays in time with the decks.
 

@@ -20,8 +20,8 @@
 | BROWSE knob | Scroll · Push: load song | Scroll 10 at a time |
 | ASSIST | Open selected item | **Save a GOOD MIX** (this deck's song worked after the other deck's) |
 | BACK | Back to the song list | Big library view |
-| VOCAL | **Mute / unmute vocals** (stem files) | same |
-| INSTRUMENTAL | **Mute / unmute the music** (stem files) | same |
+| VOCAL | **Vocals only, on / off** (stem files) | same |
+| INSTRUMENTAL | **Music only, on / off** (stem files) | same |
 | Platter | Scratch and nudge | same |
 | Pad mode 1-4 | Pad pages 1-4 | Pad pages 5-8 |
 
