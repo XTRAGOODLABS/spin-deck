@@ -211,6 +211,32 @@ Java_org_qtproject_qt_android_QtNativeAccessibility_accessibilitySupported(JNIEn
 #endif
 
 #ifdef Q_OS_MACOS
+#include <limits.h>
+#include <sys/resource.h>
+
+namespace {
+// Spin Deck: macOS lets an app keep only 256 files open at once. A stem file is opened
+// once per part (5 times), the analyzer runs one thread per CPU core, and audio plug-ins
+// and the controller need their own, so two stem songs plus analysis ran out. When that
+// happened the library, the analyzer and the T7 stopped working. Ask for the most macOS
+// allows.
+void raiseOpenFileLimit() {
+    struct rlimit limit;
+    if (getrlimit(RLIMIT_NOFILE, &limit) != 0) {
+        return;
+    }
+    rlim_t wanted = OPEN_MAX;
+    if (limit.rlim_max != RLIM_INFINITY && limit.rlim_max < wanted) {
+        wanted = limit.rlim_max;
+    }
+    if (limit.rlim_cur >= wanted) {
+        return;
+    }
+    limit.rlim_cur = wanted;
+    setrlimit(RLIMIT_NOFILE, &limit);
+}
+} // namespace
+
 namespace {
 // Spin Deck: early beta builds ran inside Apple's sandbox, which kept settings in
 // ~/Library/Containers/com.xtragoodlabs.spindeck/... Builds now run outside it, so copy
@@ -255,6 +281,7 @@ int main(int argc, char * argv[]) {
     Console console;
 
 #ifdef Q_OS_MACOS
+    raiseOpenFileLimit();
     moveSandboxedSettings();
 #endif
 
