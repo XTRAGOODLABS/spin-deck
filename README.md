@@ -1,86 +1,93 @@
-# Mixxx
+<div align="center">
 
-[![GitHub latest tag](https://img.shields.io/github/tag/mixxxdj/mixxx.svg)](https://mixxx.org/download)
-[![Packaging status](https://repology.org/badge/tiny-repos/mixxx.svg)](https://repology.org/metapackage/mixxx/versions)
-[![Build status](https://github.com/mixxxdj/mixxx/actions/workflows/build.yml/badge.svg)](https://github.com/mixxxdj/mixxx/actions/workflows/build.yml)
-[![Coverage status](https://coveralls.io/repos/github/mixxxdj/mixxx/badge.svg)](https://coveralls.io/github/mixxxdj/mixxx)
-[![Zulip chat](https://img.shields.io/badge/zulip-join_chat-brightgreen.svg)](https://mixxx.zulipchat.com)
-[![Donate](https://img.shields.io/opencollective/all/mixxx?label=Donate)](https://mixxx.org/donate)
+<img src="docs/icon.png" width="160" alt="Spin Deck icon">
 
-[Mixxx] is Free DJ software that gives you everything you need to perform live
-DJ mixes. Mixxx works on GNU/Linux, Windows, and macOS.
+# SPIN DECK
 
-## Quick Start
+### A free DJ app for Mac, with GOOD MIXX and stems built in.
 
-To get started with Mixxx:
+From **XTRA GOOD LABS** · [**Buy me a coffee ☕**](https://buymeacoffee.com/xtragoodlabs) · [**Website & download**](https://xtragoodlabs.github.io/spin-deck) · [**Report a bug**](https://github.com/XTRAGOODLABS/spin-deck/issues/new/choose) · [**More from XTRA GOOD LABS**](https://github.com/XTRAGOODLABS)
 
-1. For live use, [download the latest stable version][download-stable].
-2. For experimentation and testing, [download a development release][download-testing].
-3. To live on the bleeding edge, clone the repo: `git clone https://github.com/mixxxdj/mixxx.git`
+<img src="docs/screenshots/spin-deck.jpg" width="900" alt="Spin Deck">
 
-## Bug tracker
+</div>
 
-The Mixxx team uses [Github Issues][issues] to manage Mixxx development.
+**Feature map:** [FEATURE-MAP.md](FEATURE-MAP.md) · **Inpulse T7 control map:** [T7-MAP.md](T7-MAP.md)
 
-Have a bug or feature request? [File a bug on Github][fileabug].
+Spin Deck is a DJ app from XTRAGOODLABS, part of the Crate OS family.
 
-Want to get involved in Mixxx development? Assign yourself a bug from the [easy
-bug list][easybugs] and get started!
+## Built on Mixxx
 
-## Building Mixxx
+Spin Deck is built on [Mixxx](https://mixxx.org), the free and open-source DJ
+software made by the Mixxx Development Team. Mixxx is licensed under the GNU
+General Public License, version 2 or later, and so is Spin Deck. See
+[LICENSE](LICENSE). Huge thanks to everyone who has worked on Mixxx.
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) for build instructions, code style
-guidelines, and how to open a pull request.
+## Controllers
 
-## Documentation
+- **Hercules DJControl Inpulse T7** (beta): motor platters, colored pads,
+  effects and mixer. This setup is by Infinite-Grok
+  (github.com/Infinite-Grok/mixxx-hercules-t7, GPL-2.0-or-later), and builds on
+  the Inpulse 500 setup in Mixxx by Ev3nt1ne, DJ Phatso and resetreboot.
 
-For help using Mixxx, there are a variety of options:
+## GOOD MIXX
 
-- [Mixxx manual][manual]
-- [Mixxx wiki][wiki]
-- [Hardware Compatibility]
-- [Creating Skins]
+Remember the mixes that work and get next-song suggestions. The GOOD MIXX idea
+comes from DJ Aquarobotics.
 
-## Translation
+- **Save a good mix:** on the Inpulse T7, hold SHIFT and press ASSIST on the
+  deck you just mixed in. A big "GOOD MIX SAVED" sign shows on screen and that
+  deck's pads flash green.
+- **What's next:** click **GOOD MIXX** in the library sidebar. Under it,
+  **✓ Good mixes** lists songs that already worked after the playing song, and
+  **Suggestions** lists songs with a close tempo and a matching key. Clicking
+  GOOD MIXX itself shows both, good mixes first.
+- **Undo or bring in old mixes:** right-click **GOOD MIXX** in the sidebar.
+  Spin Deck brings in the GOOD MIXX app's saved mixes the first time it starts.
+- Other controllers can use `[GoodMixx],save_deck1`-`save_deck4`,
+  `[GoodMixx],undo` and `[GoodMixx],saved_deck`.
 
-Help to spread Mixxx with translations into more languages, as well as to update and ensure the accuracy of existing translations.
+## Make Stems
 
-- [Help translate content]
-- [Mixxx i18n wiki]
-- [Mixxx localization forum]
-- [Mixxx glossary]
+Split songs into drums, bass, other and vocals with the free Demucs splitter.
 
-## Community
+- Right-click one or more songs and choose **Make Stems**. The first time,
+  Spin Deck asks to download the splitter (about 2-3 GB, once) into
+  `~/Library/Application Support/Spin Deck/stems`. Delete that folder to remove it.
+- Songs are split one at a time in the background; a sign shows progress. Each
+  finished `.stem.mp4` is saved next to the song and takes the song's place in the
+  library: same crates, playlists, hot cues, BPM and key. The original file is left
+  on your drive and hidden from the library, so there is never a second copy to
+  search for.
+- On the Inpulse T7: **VOCAL** plays only the vocals, **INSTRUMENTAL** plays
+  only the music (press again for everything), and pad page 3 gives one pad per stem (lit in its colour while it
+  plays, dark red while muted).
+- **BeatDeck**: a beat grid that plays in time with the decks.
 
-Mixxx is a vibrant community of hackers, DJs and artists. To keep track of
-development and community news:
+## Skins
 
-- Chat with us on [Zulip][zulip].
-- Follow us on [Mastodon], [Bluesky] and [Facebook].
-- Subscribe to the [Mixxx Blog][blog].
-- Post on the [Mixxx forums][discourse].
+Four Spin Deck layouts, picked in **Preferences → Interface → Skin**:
 
-## License
+- **Spin Deck CRATE**: the everyday layout. Waveforms on top, turntables, decks,
+  mixer and library.
+- **Spin Deck BOOTH**: for playing out. Huge numbers and big buttons; tap
+  **LIBRARY** to show or hide the song list.
+- **Spin Deck ON AIR**: for radio. Library first, big clock, mic ON AIR button
+  and Auto DJ controls (Auto DJ, Fade Now, Skip).
+- **Spin Deck POCKET**: a small layout for a laptop screen or a side window.
 
-Mixxx is released under the GPLv2. See the LICENSE file for a full copy of the
-license.
+The skins are made by `packaging/spindeck/make-skins.py`; run it again after
+changing it.
 
-[mixxx]: https://mixxx.org
-[download-stable]: https://mixxx.org/download/#stable
-[download-testing]: https://mixxx.org/download/#testing
-[issues]: https://github.com/mixxxdj/mixxx/issues
-[fileabug]: https://github.com/mixxxdj/mixxx/issues/new/choose
-[mastodon]: https://floss.social/@mixxx
-[Bluesky]: https://bsky.app/profile/mixxx.bsky.social
-[facebook]: https://www.facebook.com/pages/Mixxx-DJ-Software/21723485212
-[blog]: https://mixxx.org/news/
-[manual]: https://manual.mixxx.org/
-[wiki]: https://github.com/mixxxdj/mixxx/wiki
-[easybugs]: https://github.com/mixxxdj/mixxx/issues?q=is%3Aopen+is%3Aissue+label%3Aeasy
-[creating skins]: https://mixxx.org/wiki/doku.php/Creating-Skins
-[help translate content]: https://explore.transifex.com/mixxx-dj-software/
-[Mixxx i18n wiki]: https://github.com/mixxxdj/mixxx/wiki/Internationalization
-[Mixxx localization forum]: https://mixxx.discourse.group/c/translation/13
-[hardware compatibility]: https://manual.mixxx.org/2.3/en/hardware/manuals.html
-[zulip]: https://mixxx.zulipchat.com/
-[discourse]: https://mixxx.discourse.group/
+## Mac download
+
+Each change builds a Mac app on GitHub. Open the **Actions** tab, pick the
+latest **Spin Deck Mac Build** run, and download the Apple Silicon or Intel
+version at the bottom of the page.
+
+## Support
+
+Spin Deck is free. If it helps your sets, you can
+[buy XTRA GOOD LABS a coffee](https://buymeacoffee.com/xtragoodlabs).
+
+The original Mixxx read-me is kept in [MIXXX-README.md](MIXXX-README.md).
