@@ -5,10 +5,9 @@
 
 name: Spin Deck Mac Build
 
+# Builds only when started by hand: Actions > Spin Deck Mac Build > Run workflow.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
 
 permissions:
   contents: read
