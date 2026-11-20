@@ -4,7 +4,7 @@
 
 # SPIN DECK
 
-### A free DJ app for Mac, with GOOD MIXX and stems built in.
+### A free DJ app for Mac, with GOOD MIXX™ and stems built in.
 
 From **XTRA GOOD LABS** · [**Buy me a coffee ☕**](https://buymeacoffee.com/xtragoodlabs) · [**Website & download**](https://xtragoodlabs.github.io/spin-deck) · [**Report a bug**](https://github.com/XTRAGOODLABS/spin-deck/issues/new/choose) · [**More from XTRA GOOD LABS**](https://github.com/XTRAGOODLABS)
 
@@ -30,7 +30,7 @@ General Public License, version 2 or later, and so is Spin Deck. See
   (github.com/Infinite-Grok/mixxx-hercules-t7, GPL-2.0-or-later), and builds on
   the Inpulse 500 setup in Mixxx by Ev3nt1ne, DJ Phatso and resetreboot.
 
-## GOOD MIXX
+## GOOD MIXX™
 
 Remember the mixes that work and get next-song suggestions. The GOOD MIXX idea
 comes from DJ Aquarobotics.
@@ -91,3 +91,5 @@ Spin Deck is free. If it helps your sets, you can
 [buy XTRA GOOD LABS a coffee](https://buymeacoffee.com/xtragoodlabs).
 
 The original Mixxx read-me is kept in [MIXXX-README.md](MIXXX-README.md).
+
+GOOD MIXX™, Spin Deck™, Crate OS™ and Beatdeck™ are trademarks of XTRA GOOD LABS.

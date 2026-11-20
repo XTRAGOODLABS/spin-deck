@@ -146,7 +146,7 @@ GoodMixxFeature::GoodMixxFeature(Library* pLibrary, UserSettingsPointer pConfig)
 GoodMixxFeature::~GoodMixxFeature() = default;
 
 QVariant GoodMixxFeature::title() {
-    return QStringLiteral("GOOD MIXX");
+    return QStringLiteral("GOOD MIXX™");
 }
 
 TreeItemModel* GoodMixxFeature::sidebarModel() const {
@@ -443,7 +443,7 @@ void GoodMixxFeature::importFromGoodMixxApp(bool tellUser) {
     }
     if (tellUser) {
         QMessageBox::information(nullptr,
-                QStringLiteral("GOOD MIXX"),
+                QStringLiteral("GOOD MIXX™"),
                 added < 0 ? tr("No GOOD MIXX app memory was found on this Mac.")
                           : tr("Brought in %1 new mixes from the GOOD MIXX app.").arg(added));
     }
