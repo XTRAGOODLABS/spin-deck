@@ -65,6 +65,7 @@
 
 #ifdef __APPLE__
 #include "util/sandbox.h"
+#include "spindeck/settingsfolder.h"
 #endif
 
 #if defined(Q_OS_LINUX) && defined(__X11__)
@@ -404,7 +405,7 @@ void CoreServices::initializeSettings() {
     // Solution: Start Mixxx with default settings, migrate the preferences, and then restart
     // immediately.
     if (!m_cmdlineArgs.getSettingsPathSet()) {
-        CmdlineArgs::Instance().setSettingsPath(Sandbox::migrateOldSettings());
+        CmdlineArgs::Instance().setSettingsPath(spindeck::settingsFolder());
     }
 #endif
     QString settingsPath = m_cmdlineArgs.getSettingsPath();

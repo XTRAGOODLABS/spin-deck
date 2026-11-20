@@ -1397,6 +1397,7 @@ add_library(
   src/library/autodj/autodjfeature.cpp
   src/library/goodmixx/goodmixxfeature.cpp
   src/library/goodmixx/goodmixxstore.cpp
+  src/spindeck/settingsfolder.cpp
   src/spindeck/spindecksign.cpp
   src/spindeck/stemmaker.cpp
   src/library/autodj/autodjprocessor.cpp

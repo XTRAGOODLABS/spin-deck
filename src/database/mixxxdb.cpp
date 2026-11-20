@@ -26,7 +26,7 @@ const QString kConnectOptions = QStringLiteral("QSQLITE_OPEN_URI");
 
 const QString kUriPrefix = QStringLiteral("file://");
 
-const QString kDefaultFileName = QStringLiteral("mixxxdb.sqlite");
+const QString kDefaultFileName = QStringLiteral("spindeck.sqlite");
 
 const QString kUserName = QStringLiteral("mixxx");
 

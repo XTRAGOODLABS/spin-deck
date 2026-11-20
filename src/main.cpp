@@ -37,6 +37,7 @@
 #include "util/console.h"
 #include "util/logging.h"
 #include "util/sandbox.h"
+#include "spindeck/settingsfolder.h"
 #include "util/versionstore.h"
 
 namespace {
@@ -237,44 +238,6 @@ void raiseOpenFileLimit() {
 }
 } // namespace
 
-namespace {
-// Spin Deck: early beta builds ran inside Apple's sandbox, which kept settings in
-// ~/Library/Containers/com.xtragoodlabs.spindeck/... Builds now run outside it, so copy
-// those settings (library, controllers, GOOD MIXX memory) over once.
-bool copyFolder(const QString& from, const QString& to) {
-    QDir source(from);
-    if (!QDir().mkpath(to)) {
-        return false;
-    }
-    bool ok = true;
-    const auto entries = source.entryInfoList(
-            QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden);
-    for (const auto& entry : entries) {
-        const QString target = QDir(to).filePath(entry.fileName());
-        if (entry.isDir() && !entry.isSymLink()) {
-            ok = copyFolder(entry.absoluteFilePath(), target) && ok;
-        } else if (!QFile::exists(target)) {
-            ok = QFile::copy(entry.absoluteFilePath(), target) && ok;
-        }
-    }
-    return ok;
-}
-
-void moveSandboxedSettings() {
-    if (qEnvironmentVariableIsSet("APP_SANDBOX_CONTAINER_ID")) {
-        return; // still sandboxed
-    }
-    const QString home = QDir::homePath();
-    const QString target = home + QStringLiteral("/Library/Application Support/Spin Deck");
-    const QString source = home +
-            QStringLiteral("/Library/Containers/com.xtragoodlabs.spindeck/Data/"
-                           "Library/Application Support/Spin Deck");
-    if (QDir(target).exists() || !QDir(source).exists()) {
-        return;
-    }
-    copyFolder(source, target);
-}
-} // namespace
 #endif
 
 int main(int argc, char * argv[]) {
@@ -282,7 +245,6 @@ int main(int argc, char * argv[]) {
 
 #ifdef Q_OS_MACOS
     raiseOpenFileLimit();
-    moveSandboxedSettings();
 #endif
 
     // These need to be set early on (not sure how early) in order to trigger
@@ -367,7 +329,7 @@ int main(int argc, char * argv[]) {
     // Solution: Start Mixxx with default settings, migrate the preferences, and then restart
     // immediately.
     if (!args.getSettingsPathSet()) {
-        CmdlineArgs::Instance().setSettingsPath(Sandbox::migrateOldSettings());
+        CmdlineArgs::Instance().setSettingsPath(spindeck::settingsFolder());
     }
 #endif
 
