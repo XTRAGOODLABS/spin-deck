@@ -346,6 +346,580 @@
       <SetVariable name="OverviewFontSizeSampler">10</SetVariable>
       <SetVariable name="OverviewFontSizePreview">9</SetVariable>
     </Scheme><!-- Classic -->
+    <!-- SPINDECK THEMES BEGIN (made by packaging/spindeck/make-themes.py) -->
+    <Scheme>
+      <Name>Spin Deck</Name>
+      <!-- Mix any of the existing button, knob, slider or style theme subsets.
+        The button templates for example link to skins:LateNight/BtnTheme/buttons/btn_...
+
+        BtnScheme     borders / background images for pushbuttons, spinboxes,
+                      effect selector, AutoDJ fade mode selector.
+                      If 'BtnSize' variable is undefined it links to transparent
+                      dummy icons like btn_embedded__active.svg
+              Note:   Icons for buttons that have images set in xml already are set
+                      in the respective style-[theme].qss
+        KnobScheme    guess what
+        SliderScheme  ...exactly!
+        StyleScheme   icons & backgrounds for library, splitters, spinnies,
+                      VU meter, default cover art etc. -->
+      <LaunchImageStyle>
+        LaunchImage {
+          background-color: #0b0b0b;
+        }
+        QLabel {
+          image: url(skins:LateNight/palemoon/style/mixxx_logo.svg);
+          padding: 0;
+          margin: 0px 2px 0px 2px;
+          border: none;
+          min-width: 160px;
+          max-width: 160px;
+          min-height: 40px;
+          max-height: 40px;
+        }
+        QProgressBar {
+          background: url(skins:LateNight/palemoon/style/progressbar_bg.svg);
+          border: none;
+          min-width: 164px;
+          max-width: 164px;
+          min-height: 5px;
+          max-height: 5px;
+        }
+        QProgressBar::chunk {
+          background: url(skins:LateNight/palemoon/style/progressbar.svg);
+        }
+      </LaunchImageStyle>
+
+      <Style src="skins:LateNight/style_spindeck_crate.qss"/>
+
+      <SetVariable name="BtnScheme">palemoon</SetVariable>
+      <SetVariable name="KnobScheme">palemoon</SetVariable>
+      <SetVariable name="SliderScheme">palemoon</SetVariable>
+      <SetVariable name="StyleScheme">palemoon</SetVariable>
+
+      <!-- Waveform & Overview colors -->
+      <!-- This is a hack to have a grey background in empty decks.
+          When a track is loaded the bg gets darker for better contrast -->
+      <SetVariable name="BgColorOverview_12">#121212</SetVariable>
+      <SetVariable name="BgColorOverview_34">#051e11</SetVariable>
+      <SetVariable name="BgColorOverview_SamPre">rgba(11, 11, 11, 20)</SetVariable>
+      <SetVariable name="BgColorWaveform_12">#0a0a0a</SetVariable>
+      <SetVariable name="BgColorWaveform_34">#051e11</SetVariable>
+      <SetVariable name="SignalColor_12">#88ddb0</SetVariable>
+      <SetVariable name="SignalColor_34">#5ee39c</SetVariable>
+
+      <!-- Only named colors are accepted, see w3 color chart
+          https://www.w3.org/wiki/CSS/Properties/color/keywords -->
+      <SetVariable name="SignalHighColor">mediumblue</SetVariable><!-- #0000cd -->
+      <SetVariable name="SignalMidColor">darkgreen</SetVariable><!-- #006400 -->
+      <SetVariable name="SignalLowColor">orangered</SetVariable><!-- #ff4500 -->
+
+      <SetVariable name="DimBrightThresholdOverview">127</SetVariable>
+      <SetVariable name="DimBrightThresholdWaveform">105</SetVariable>
+      <SetVariable name="DimBrightThresholdHotcueBtn">105</SetVariable>
+      <!-- When dragging a hotcue button in order to swap hotcues, the entire
+           widget rect is used for the dnd cursor but the margin is not considered.
+           '1' cuts off the colored overlap. -->
+      <SetVariable name="DndRectMarginHotcueBtn">1</SetVariable>
+
+      <SetVariable name="AxesColor">#999999</SetVariable>
+      <SetVariable name="BeatColor">#999999</SetVariable>
+      <SetVariable name="PlayPosColor">#26d97a</SetVariable>
+      <SetVariable name="CueColor">#ff7a01</SetVariable>
+      <SetVariable name="LoopColor">#00b400</SetVariable>
+      <SetVariable name="IntroOutroColor">#2c5c9a</SetVariable>
+      <SetVariable name="PlayedOverlayColor">#dd151515</SetVariable>
+      <SetVariable name="EndOfTrackColor">#f856e7</SetVariable>
+      <SetVariable name="SlipBorderOutlineColor">#f08c00</SetVariable>
+      <SetVariable name="PassthroughLabelColor">#b24c12</SetVariable>
+      <SetVariable name="OverviewFontSizeDeck">13</SetVariable>
+      <SetVariable name="OverviewFontSizeDeckMini">11</SetVariable>
+      <SetVariable name="OverviewFontSizeSampler">10</SetVariable>
+      <SetVariable name="OverviewFontSizePreview">9</SetVariable>
+
+      <!-- Set the button icons used by templates in LateNight/controls/button...xml
+           There, those border icons are stacked on top of the additional icons set in css.
+           Other buttons that use text (like vinyl controls and Fx assign button) are styled
+           in css via
+              border-width: 2px;
+              border-image: url(skins:LateNight/path/to/btn_icon.svg) 2 2 2 2;
+        Example themes: (in PaleMoon only the embedded style is used)
+        * elevated: domed buttons that stand out, with a 3D border and a drop shadow
+        * embedded: slightly domed buttons that seem leveled with surface and a surrounding groove
+       -->
+      <!-- Buttons in top-level containers like mixer, rate controls, collapsed FxUnits etc. -->
+      <SetVariable name="TopRegion_BtnType">embedded</SetVariable>
+      <!-- Buttons in subregions like transport row, mic/aux units etc. -->
+      <SetVariable name="SubRegion_BtnType">embedded</SetVariable>
+
+      <!-- Knob settings -->
+      <SetVariable name="PotiMinAngle">-130</SetVariable>
+      <SetVariable name="PotiMaxAngle">130</SetVariable>
+      <!-- Arc Settings -->
+      <SetVariable name="ArcRadiusBig">14.5</SetVariable>
+      <SetVariable name="ArcRadiusCompact">12.5</SetVariable>
+      <SetVariable name="ArcRadiusSmall">12.0</SetVariable>
+      <SetVariable name="ArcThicknessBig">2</SetVariable>
+      <SetVariable name="ArcRoundCaps">true</SetVariable>
+      <!-- Arc Colors -->
+      <SetVariable name="ArcColorEq">#858585</SetVariable>
+      <SetVariable name="ArcColorGain">#259459</SetVariable>
+      <SetVariable name="ArcColorFx12Quick">#518f00</SetVariable>
+      <SetVariable name="ArcColorFx34">#167e47</SetVariable>
+      <SetVariable name="ArcColorFxParameter">#4e4e4e</SetVariable>
+      <SetVariable name="ArcColorGainLow">#247a4c</SetVariable>
+      <SetVariable name="ArcColorMstBal">#a00000</SetVariable>
+      <SetVariable name="ArcColorFxMix">#a00000</SetVariable>
+      <!-- Knob pointers = suffix for indicator image url -->
+      <SetVariable name="KnobColorEq">grey</SetVariable>
+      <SetVariable name="KnobColorQuickEffect">green</SetVariable>
+      <SetVariable name="KnobColorFx12">green</SetVariable>
+      <SetVariable name="KnobColorFx34">blue</SetVariable>
+      <SetVariable name="KnobColorFxParameter">grey</SetVariable>
+      <!-- Size of the small EQ kill indicators:
+          svg is 6x6 px, set size to '0f,0f' to hide them -->
+      <SetVariable name="EqKillDotSize">9f,9f</SetVariable>
+
+      <!-- Slider bar settings -->
+      <SetVariable name="BarBgColor">#010101</SetVariable>
+      <SetVariable name="BarColorVolume">#198e50</SetVariable>
+      <SetVariable name="BarColorCrossfader">#198e50</SetVariable>
+      <SetVariable name="BarColorPitch">#888888</SetVariable>
+      <SetVariable name="BarWidth">2</SetVariable>
+      <SetVariable name="BarMarginVolume">8,8</SetVariable>
+      <SetVariable name="BarMarginPitch">7,8</SetVariable>
+      <SetVariable name="BarMarginPitchSampler">5,5</SetVariable>
+      <SetVariable name="BarMarginCrossfader">7,7</SetVariable>
+    </Scheme><!-- Spin Deck -->
+    <Scheme>
+      <Name>Neon Night</Name>
+      <!-- Mix any of the existing button, knob, slider or style theme subsets.
+        The button templates for example link to skins:LateNight/BtnTheme/buttons/btn_...
+
+        BtnScheme     borders / background images for pushbuttons, spinboxes,
+                      effect selector, AutoDJ fade mode selector.
+                      If 'BtnSize' variable is undefined it links to transparent
+                      dummy icons like btn_embedded__active.svg
+              Note:   Icons for buttons that have images set in xml already are set
+                      in the respective style-[theme].qss
+        KnobScheme    guess what
+        SliderScheme  ...exactly!
+        StyleScheme   icons & backgrounds for library, splitters, spinnies,
+                      VU meter, default cover art etc. -->
+      <LaunchImageStyle>
+        LaunchImage {
+          background-color: #0b0b0f;
+        }
+        QLabel {
+          image: url(skins:LateNight/palemoon/style/mixxx_logo.svg);
+          padding: 0;
+          margin: 0px 2px 0px 2px;
+          border: none;
+          min-width: 160px;
+          max-width: 160px;
+          min-height: 40px;
+          max-height: 40px;
+        }
+        QProgressBar {
+          background: url(skins:LateNight/palemoon/style/progressbar_bg.svg);
+          border: none;
+          min-width: 164px;
+          max-width: 164px;
+          min-height: 5px;
+          max-height: 5px;
+        }
+        QProgressBar::chunk {
+          background: url(skins:LateNight/palemoon/style/progressbar.svg);
+        }
+      </LaunchImageStyle>
+
+      <Style src="skins:LateNight/style_spindeck_neon.qss"/>
+
+      <SetVariable name="BtnScheme">palemoon</SetVariable>
+      <SetVariable name="KnobScheme">palemoon</SetVariable>
+      <SetVariable name="SliderScheme">palemoon</SetVariable>
+      <SetVariable name="StyleScheme">palemoon</SetVariable>
+
+      <!-- Waveform & Overview colors -->
+      <!-- This is a hack to have a grey background in empty decks.
+          When a track is loaded the bg gets darker for better contrast -->
+      <SetVariable name="BgColorOverview_12">#121219</SetVariable>
+      <SetVariable name="BgColorOverview_34">#200320</SetVariable>
+      <SetVariable name="BgColorOverview_SamPre">rgba(11, 11, 15, 20)</SetVariable>
+      <SetVariable name="BgColorWaveform_12">#0a0b0e</SetVariable>
+      <SetVariable name="BgColorWaveform_34">#200320</SetVariable>
+      <SetVariable name="SignalColor_12">#71e9f4</SetVariable>
+      <SetVariable name="SignalColor_34">#f150f1</SetVariable>
+
+      <!-- Only named colors are accepted, see w3 color chart
+          https://www.w3.org/wiki/CSS/Properties/color/keywords -->
+      <SetVariable name="SignalHighColor">mediumblue</SetVariable><!-- #0000cd -->
+      <SetVariable name="SignalMidColor">darkgreen</SetVariable><!-- #006400 -->
+      <SetVariable name="SignalLowColor">orangered</SetVariable><!-- #ff4500 -->
+
+      <SetVariable name="DimBrightThresholdOverview">127</SetVariable>
+      <SetVariable name="DimBrightThresholdWaveform">105</SetVariable>
+      <SetVariable name="DimBrightThresholdHotcueBtn">105</SetVariable>
+      <!-- When dragging a hotcue button in order to swap hotcues, the entire
+           widget rect is used for the dnd cursor but the margin is not considered.
+           '1' cuts off the colored overlap. -->
+      <SetVariable name="DndRectMarginHotcueBtn">1</SetVariable>
+
+      <SetVariable name="AxesColor">#7e80b4</SetVariable>
+      <SetVariable name="BeatColor">#7e80b4</SetVariable>
+      <SetVariable name="PlayPosColor">#ec13ec</SetVariable>
+      <SetVariable name="CueColor">#ff7a01</SetVariable>
+      <SetVariable name="LoopColor">#00b400</SetVariable>
+      <SetVariable name="IntroOutroColor">#2c5c9a</SetVariable>
+      <SetVariable name="PlayedOverlayColor">#dd151515</SetVariable>
+      <SetVariable name="EndOfTrackColor">#f856e7</SetVariable>
+      <SetVariable name="SlipBorderOutlineColor">#f08c00</SetVariable>
+      <SetVariable name="PassthroughLabelColor">#b24c12</SetVariable>
+      <SetVariable name="OverviewFontSizeDeck">13</SetVariable>
+      <SetVariable name="OverviewFontSizeDeckMini">11</SetVariable>
+      <SetVariable name="OverviewFontSizeSampler">10</SetVariable>
+      <SetVariable name="OverviewFontSizePreview">9</SetVariable>
+
+      <!-- Set the button icons used by templates in LateNight/controls/button...xml
+           There, those border icons are stacked on top of the additional icons set in css.
+           Other buttons that use text (like vinyl controls and Fx assign button) are styled
+           in css via
+              border-width: 2px;
+              border-image: url(skins:LateNight/path/to/btn_icon.svg) 2 2 2 2;
+        Example themes: (in PaleMoon only the embedded style is used)
+        * elevated: domed buttons that stand out, with a 3D border and a drop shadow
+        * embedded: slightly domed buttons that seem leveled with surface and a surrounding groove
+       -->
+      <!-- Buttons in top-level containers like mixer, rate controls, collapsed FxUnits etc. -->
+      <SetVariable name="TopRegion_BtnType">embedded</SetVariable>
+      <!-- Buttons in subregions like transport row, mic/aux units etc. -->
+      <SetVariable name="SubRegion_BtnType">embedded</SetVariable>
+
+      <!-- Knob settings -->
+      <SetVariable name="PotiMinAngle">-130</SetVariable>
+      <SetVariable name="PotiMaxAngle">130</SetVariable>
+      <!-- Arc Settings -->
+      <SetVariable name="ArcRadiusBig">14.5</SetVariable>
+      <SetVariable name="ArcRadiusCompact">12.5</SetVariable>
+      <SetVariable name="ArcRadiusSmall">12.0</SetVariable>
+      <SetVariable name="ArcThicknessBig">2</SetVariable>
+      <SetVariable name="ArcRoundCaps">true</SetVariable>
+      <!-- Arc Colors -->
+      <SetVariable name="ArcColorEq">#6164a9</SetVariable>
+      <SetVariable name="ArcColorGain">#0e9eab</SetVariable>
+      <SetVariable name="ArcColorFx12Quick">#518f00</SetVariable>
+      <SetVariable name="ArcColorFx34">#890b89</SetVariable>
+      <SetVariable name="ArcColorFxParameter">#454774</SetVariable>
+      <SetVariable name="ArcColorGainLow">#0c8792</SetVariable>
+      <SetVariable name="ArcColorMstBal">#a00000</SetVariable>
+      <SetVariable name="ArcColorFxMix">#a00000</SetVariable>
+      <!-- Knob pointers = suffix for indicator image url -->
+      <SetVariable name="KnobColorEq">grey</SetVariable>
+      <SetVariable name="KnobColorQuickEffect">green</SetVariable>
+      <SetVariable name="KnobColorFx12">green</SetVariable>
+      <SetVariable name="KnobColorFx34">blue</SetVariable>
+      <SetVariable name="KnobColorFxParameter">grey</SetVariable>
+      <!-- Size of the small EQ kill indicators:
+          svg is 6x6 px, set size to '0f,0f' to hide them -->
+      <SetVariable name="EqKillDotSize">9f,9f</SetVariable>
+
+      <!-- Slider bar settings -->
+      <SetVariable name="BarBgColor">#010102</SetVariable>
+      <SetVariable name="BarColorVolume">#9a0d9a</SetVariable>
+      <SetVariable name="BarColorCrossfader">#9a0d9a</SetVariable>
+      <SetVariable name="BarColorPitch">#6668aa</SetVariable>
+      <SetVariable name="BarWidth">2</SetVariable>
+      <SetVariable name="BarMarginVolume">8,8</SetVariable>
+      <SetVariable name="BarMarginPitch">7,8</SetVariable>
+      <SetVariable name="BarMarginPitchSampler">5,5</SetVariable>
+      <SetVariable name="BarMarginCrossfader">7,7</SetVariable>
+    </Scheme><!-- Neon Night -->
+    <Scheme>
+      <Name>Vinyl Gold</Name>
+      <!-- Mix any of the existing button, knob, slider or style theme subsets.
+        The button templates for example link to skins:LateNight/BtnTheme/buttons/btn_...
+
+        BtnScheme     borders / background images for pushbuttons, spinboxes,
+                      effect selector, AutoDJ fade mode selector.
+                      If 'BtnSize' variable is undefined it links to transparent
+                      dummy icons like btn_embedded__active.svg
+              Note:   Icons for buttons that have images set in xml already are set
+                      in the respective style-[theme].qss
+        KnobScheme    guess what
+        SliderScheme  ...exactly!
+        StyleScheme   icons & backgrounds for library, splitters, spinnies,
+                      VU meter, default cover art etc. -->
+      <LaunchImageStyle>
+        LaunchImage {
+          background-color: #0f0e0c;
+        }
+        QLabel {
+          image: url(skins:LateNight/palemoon/style/mixxx_logo.svg);
+          padding: 0;
+          margin: 0px 2px 0px 2px;
+          border: none;
+          min-width: 160px;
+          max-width: 160px;
+          min-height: 40px;
+          max-height: 40px;
+        }
+        QProgressBar {
+          background: url(skins:LateNight/palemoon/style/progressbar_bg.svg);
+          border: none;
+          min-width: 164px;
+          max-width: 164px;
+          min-height: 5px;
+          max-height: 5px;
+        }
+        QProgressBar::chunk {
+          background: url(skins:LateNight/palemoon/style/progressbar.svg);
+        }
+      </LaunchImageStyle>
+
+      <Style src="skins:LateNight/style_spindeck_gold.qss"/>
+
+      <SetVariable name="BtnScheme">palemoon</SetVariable>
+      <SetVariable name="KnobScheme">palemoon</SetVariable>
+      <SetVariable name="SliderScheme">palemoon</SetVariable>
+      <SetVariable name="StyleScheme">palemoon</SetVariable>
+
+      <!-- Waveform & Overview colors -->
+      <!-- This is a hack to have a grey background in empty decks.
+          When a track is loaded the bg gets darker for better contrast -->
+      <SetVariable name="BgColorOverview_12">#191714</SetVariable>
+      <SetVariable name="BgColorOverview_34">#201803</SetVariable>
+      <SetVariable name="BgColorOverview_SamPre">rgba(15, 14, 12, 20)</SetVariable>
+      <SetVariable name="BgColorWaveform_12">#0e0d0c</SetVariable>
+      <SetVariable name="BgColorWaveform_34">#201803</SetVariable>
+      <SetVariable name="SignalColor_12">#eca379</SetVariable>
+      <SetVariable name="SignalColor_34">#ecc155</SetVariable>
+
+      <!-- Only named colors are accepted, see w3 color chart
+          https://www.w3.org/wiki/CSS/Properties/color/keywords -->
+      <SetVariable name="SignalHighColor">mediumblue</SetVariable><!-- #0000cd -->
+      <SetVariable name="SignalMidColor">darkgreen</SetVariable><!-- #006400 -->
+      <SetVariable name="SignalLowColor">orangered</SetVariable><!-- #ff4500 -->
+
+      <SetVariable name="DimBrightThresholdOverview">127</SetVariable>
+      <SetVariable name="DimBrightThresholdWaveform">105</SetVariable>
+      <SetVariable name="DimBrightThresholdHotcueBtn">105</SetVariable>
+      <!-- When dragging a hotcue button in order to swap hotcues, the entire
+           widget rect is used for the dnd cursor but the margin is not considered.
+           '1' cuts off the colored overlap. -->
+      <SetVariable name="DndRectMarginHotcueBtn">1</SetVariable>
+
+      <SetVariable name="AxesColor">#ab9987</SetVariable>
+      <SetVariable name="BeatColor">#ab9987</SetVariable>
+      <SetVariable name="PlayPosColor">#e6ac19</SetVariable>
+      <SetVariable name="CueColor">#ff7a01</SetVariable>
+      <SetVariable name="LoopColor">#00b400</SetVariable>
+      <SetVariable name="IntroOutroColor">#2c5c9a</SetVariable>
+      <SetVariable name="PlayedOverlayColor">#dd151515</SetVariable>
+      <SetVariable name="EndOfTrackColor">#f856e7</SetVariable>
+      <SetVariable name="SlipBorderOutlineColor">#f08c00</SetVariable>
+      <SetVariable name="PassthroughLabelColor">#b24c12</SetVariable>
+      <SetVariable name="OverviewFontSizeDeck">13</SetVariable>
+      <SetVariable name="OverviewFontSizeDeckMini">11</SetVariable>
+      <SetVariable name="OverviewFontSizeSampler">10</SetVariable>
+      <SetVariable name="OverviewFontSizePreview">9</SetVariable>
+
+      <!-- Set the button icons used by templates in LateNight/controls/button...xml
+           There, those border icons are stacked on top of the additional icons set in css.
+           Other buttons that use text (like vinyl controls and Fx assign button) are styled
+           in css via
+              border-width: 2px;
+              border-image: url(skins:LateNight/path/to/btn_icon.svg) 2 2 2 2;
+        Example themes: (in PaleMoon only the embedded style is used)
+        * elevated: domed buttons that stand out, with a 3D border and a drop shadow
+        * embedded: slightly domed buttons that seem leveled with surface and a surrounding groove
+       -->
+      <!-- Buttons in top-level containers like mixer, rate controls, collapsed FxUnits etc. -->
+      <SetVariable name="TopRegion_BtnType">embedded</SetVariable>
+      <!-- Buttons in subregions like transport row, mic/aux units etc. -->
+      <SetVariable name="SubRegion_BtnType">embedded</SetVariable>
+
+      <!-- Knob settings -->
+      <SetVariable name="PotiMinAngle">-130</SetVariable>
+      <SetVariable name="PotiMaxAngle">130</SetVariable>
+      <!-- Arc Settings -->
+      <SetVariable name="ArcRadiusBig">14.5</SetVariable>
+      <SetVariable name="ArcRadiusCompact">12.5</SetVariable>
+      <SetVariable name="ArcRadiusSmall">12.0</SetVariable>
+      <SetVariable name="ArcThicknessBig">2</SetVariable>
+      <SetVariable name="ArcRoundCaps">true</SetVariable>
+      <!-- Arc Colors -->
+      <SetVariable name="ArcColorEq">#9d856d</SetVariable>
+      <SetVariable name="ArcColorGain">#a24a17</SetVariable>
+      <SetVariable name="ArcColorFx12Quick">#518f00</SetVariable>
+      <SetVariable name="ArcColorFx34">#85640f</SetVariable>
+      <SetVariable name="ArcColorFxParameter">#736251</SetVariable>
+      <SetVariable name="ArcColorGainLow">#8a3f14</SetVariable>
+      <SetVariable name="ArcColorMstBal">#a00000</SetVariable>
+      <SetVariable name="ArcColorFxMix">#a00000</SetVariable>
+      <!-- Knob pointers = suffix for indicator image url -->
+      <SetVariable name="KnobColorEq">grey</SetVariable>
+      <SetVariable name="KnobColorQuickEffect">green</SetVariable>
+      <SetVariable name="KnobColorFx12">green</SetVariable>
+      <SetVariable name="KnobColorFx34">blue</SetVariable>
+      <SetVariable name="KnobColorFxParameter">grey</SetVariable>
+      <!-- Size of the small EQ kill indicators:
+          svg is 6x6 px, set size to '0f,0f' to hide them -->
+      <SetVariable name="EqKillDotSize">9f,9f</SetVariable>
+
+      <!-- Slider bar settings -->
+      <SetVariable name="BarBgColor">#020202</SetVariable>
+      <SetVariable name="BarColorVolume">#967011</SetVariable>
+      <SetVariable name="BarColorCrossfader">#967011</SetVariable>
+      <SetVariable name="BarColorPitch">#9f8871</SetVariable>
+      <SetVariable name="BarWidth">2</SetVariable>
+      <SetVariable name="BarMarginVolume">8,8</SetVariable>
+      <SetVariable name="BarMarginPitch">7,8</SetVariable>
+      <SetVariable name="BarMarginPitchSampler">5,5</SetVariable>
+      <SetVariable name="BarMarginCrossfader">7,7</SetVariable>
+    </Scheme><!-- Vinyl Gold -->
+    <Scheme>
+      <Name>Ice</Name>
+      <!-- Mix any of the existing button, knob, slider or style theme subsets.
+        The button templates for example link to skins:LateNight/BtnTheme/buttons/btn_...
+
+        BtnScheme     borders / background images for pushbuttons, spinboxes,
+                      effect selector, AutoDJ fade mode selector.
+                      If 'BtnSize' variable is undefined it links to transparent
+                      dummy icons like btn_embedded__active.svg
+              Note:   Icons for buttons that have images set in xml already are set
+                      in the respective style-[theme].qss
+        KnobScheme    guess what
+        SliderScheme  ...exactly!
+        StyleScheme   icons & backgrounds for library, splitters, spinnies,
+                      VU meter, default cover art etc. -->
+      <LaunchImageStyle>
+        LaunchImage {
+          background-color: #0d0e0f;
+        }
+        QLabel {
+          image: url(skins:LateNight/palemoon/style/mixxx_logo.svg);
+          padding: 0;
+          margin: 0px 2px 0px 2px;
+          border: none;
+          min-width: 160px;
+          max-width: 160px;
+          min-height: 40px;
+          max-height: 40px;
+        }
+        QProgressBar {
+          background: url(skins:LateNight/palemoon/style/progressbar_bg.svg);
+          border: none;
+          min-width: 164px;
+          max-width: 164px;
+          min-height: 5px;
+          max-height: 5px;
+        }
+        QProgressBar::chunk {
+          background: url(skins:LateNight/palemoon/style/progressbar.svg);
+        }
+      </LaunchImageStyle>
+
+      <Style src="skins:LateNight/style_spindeck_ice.qss"/>
+
+      <SetVariable name="BtnScheme">palemoon</SetVariable>
+      <SetVariable name="KnobScheme">palemoon</SetVariable>
+      <SetVariable name="SliderScheme">palemoon</SetVariable>
+      <SetVariable name="StyleScheme">palemoon</SetVariable>
+
+      <!-- Waveform & Overview colors -->
+      <!-- This is a hack to have a grey background in empty decks.
+          When a track is loaded the bg gets darker for better contrast -->
+      <SetVariable name="BgColorOverview_12">#16181a</SetVariable>
+      <SetVariable name="BgColorOverview_34">#04181f</SetVariable>
+      <SetVariable name="BgColorOverview_SamPre">rgba(13, 14, 15, 20)</SetVariable>
+      <SetVariable name="BgColorWaveform_12">#0d0e0f</SetVariable>
+      <SetVariable name="BgColorWaveform_34">#04181f</SetVariable>
+      <SetVariable name="SignalColor_12">#819fe4</SetVariable>
+      <SetVariable name="SignalColor_34">#5ac4e7</SetVariable>
+
+      <!-- Only named colors are accepted, see w3 color chart
+          https://www.w3.org/wiki/CSS/Properties/color/keywords -->
+      <SetVariable name="SignalHighColor">mediumblue</SetVariable><!-- #0000cd -->
+      <SetVariable name="SignalMidColor">darkgreen</SetVariable><!-- #006400 -->
+      <SetVariable name="SignalLowColor">orangered</SetVariable><!-- #ff4500 -->
+
+      <SetVariable name="DimBrightThresholdOverview">127</SetVariable>
+      <SetVariable name="DimBrightThresholdWaveform">105</SetVariable>
+      <SetVariable name="DimBrightThresholdHotcueBtn">105</SetVariable>
+      <!-- When dragging a hotcue button in order to swap hotcues, the entire
+           widget rect is used for the dnd cursor but the margin is not considered.
+           '1' cuts off the colored overlap. -->
+      <SetVariable name="DndRectMarginHotcueBtn">1</SetVariable>
+
+      <SetVariable name="AxesColor">#8a99a8</SetVariable>
+      <SetVariable name="BeatColor">#8a99a8</SetVariable>
+      <SetVariable name="PlayPosColor">#20afdf</SetVariable>
+      <SetVariable name="CueColor">#ff7a01</SetVariable>
+      <SetVariable name="LoopColor">#00b400</SetVariable>
+      <SetVariable name="IntroOutroColor">#2c5c9a</SetVariable>
+      <SetVariable name="PlayedOverlayColor">#dd151515</SetVariable>
+      <SetVariable name="EndOfTrackColor">#f856e7</SetVariable>
+      <SetVariable name="SlipBorderOutlineColor">#f08c00</SetVariable>
+      <SetVariable name="PassthroughLabelColor">#b24c12</SetVariable>
+      <SetVariable name="OverviewFontSizeDeck">13</SetVariable>
+      <SetVariable name="OverviewFontSizeDeckMini">11</SetVariable>
+      <SetVariable name="OverviewFontSizeSampler">10</SetVariable>
+      <SetVariable name="OverviewFontSizePreview">9</SetVariable>
+
+      <!-- Set the button icons used by templates in LateNight/controls/button...xml
+           There, those border icons are stacked on top of the additional icons set in css.
+           Other buttons that use text (like vinyl controls and Fx assign button) are styled
+           in css via
+              border-width: 2px;
+              border-image: url(skins:LateNight/path/to/btn_icon.svg) 2 2 2 2;
+        Example themes: (in PaleMoon only the embedded style is used)
+        * elevated: domed buttons that stand out, with a 3D border and a drop shadow
+        * embedded: slightly domed buttons that seem leveled with surface and a surrounding groove
+       -->
+      <!-- Buttons in top-level containers like mixer, rate controls, collapsed FxUnits etc. -->
+      <SetVariable name="TopRegion_BtnType">embedded</SetVariable>
+      <!-- Buttons in subregions like transport row, mic/aux units etc. -->
+      <SetVariable name="SubRegion_BtnType">embedded</SetVariable>
+
+      <!-- Knob settings -->
+      <SetVariable name="PotiMinAngle">-130</SetVariable>
+      <SetVariable name="PotiMaxAngle">130</SetVariable>
+      <!-- Arc Settings -->
+      <SetVariable name="ArcRadiusBig">14.5</SetVariable>
+      <SetVariable name="ArcRadiusCompact">12.5</SetVariable>
+      <SetVariable name="ArcRadiusSmall">12.0</SetVariable>
+      <SetVariable name="ArcThicknessBig">2</SetVariable>
+      <SetVariable name="ArcRoundCaps">true</SetVariable>
+      <!-- Arc Colors -->
+      <SetVariable name="ArcColorEq">#728598</SetVariable>
+      <SetVariable name="ArcColorGain">#204499</SetVariable>
+      <SetVariable name="ArcColorFx12Quick">#518f00</SetVariable>
+      <SetVariable name="ArcColorFx34">#126682</SetVariable>
+      <SetVariable name="ArcColorFxParameter">#596876</SetVariable>
+      <SetVariable name="ArcColorGainLow">#1c3a82</SetVariable>
+      <SetVariable name="ArcColorMstBal">#a00000</SetVariable>
+      <SetVariable name="ArcColorFxMix">#a00000</SetVariable>
+      <!-- Knob pointers = suffix for indicator image url -->
+      <SetVariable name="KnobColorEq">grey</SetVariable>
+      <SetVariable name="KnobColorQuickEffect">green</SetVariable>
+      <SetVariable name="KnobColorFx12">green</SetVariable>
+      <SetVariable name="KnobColorFx34">blue</SetVariable>
+      <SetVariable name="KnobColorFxParameter">grey</SetVariable>
+      <!-- Size of the small EQ kill indicators:
+          svg is 6x6 px, set size to '0f,0f' to hide them -->
+      <SetVariable name="EqKillDotSize">9f,9f</SetVariable>
+
+      <!-- Slider bar settings -->
+      <SetVariable name="BarBgColor">#020202</SetVariable>
+      <SetVariable name="BarColorVolume">#157392</SetVariable>
+      <SetVariable name="BarColorCrossfader">#157392</SetVariable>
+      <SetVariable name="BarColorPitch">#76889a</SetVariable>
+      <SetVariable name="BarWidth">2</SetVariable>
+      <SetVariable name="BarMarginVolume">8,8</SetVariable>
+      <SetVariable name="BarMarginPitch">7,8</SetVariable>
+      <SetVariable name="BarMarginPitchSampler">5,5</SetVariable>
+      <SetVariable name="BarMarginCrossfader">7,7</SetVariable>
+    </Scheme><!-- Ice -->
+    <!-- SPINDECK THEMES END -->
   </Schemes>
 
   <ObjectName>Mixxx</ObjectName>
