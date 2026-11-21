@@ -4,7 +4,13 @@
 #include <QApplication>
 #include <QWindow>
 #endif
+#include <QDir>
+#include <QFile>
+#include <QRegularExpression>
+#include <QStringList>
+#include <QSysInfo>
 #include <QUrl>
+#include <QUrlQuery>
 
 #include "config.h"
 #include "control/controlproxy.h"
@@ -14,6 +20,7 @@
 #include "util/cmdlineargs.h"
 #include "util/desktophelper.h"
 #include "util/experiment.h"
+#include "util/versionstore.h"
 #include "vinylcontrol/defs_vinylcontrol.h"
 
 namespace {
@@ -23,6 +30,68 @@ const QString kSkinGroup = QStringLiteral("[Skin]");
 const QString kKbdShortcutsGroup = QStringLiteral("[KeyboardShortcuts]");
 const ConfigKey kHideMenuCfgKey =
         ConfigKey(QStringLiteral("[Config]"), QStringLiteral("hide_menubar"));
+
+// [AI-generated code: written by Claude at Joe's request; reviewed and approved by him.]
+// Problem reports for Spin Deck. Nothing is sent anywhere: "Report a Problem" only opens
+// the GitHub form with the version, the Mac and recent warnings from spindeck.log filled in,
+// and the person decides whether to submit it.
+const QString kIssueUrl =
+        QStringLiteral("https://github.com/XTRAGOODLABS/spin-deck/issues/new");
+constexpr int kReportLines = 25;
+constexpr int kReportChars = 1800;
+
+QString hideUserNames(QString text) {
+    const QString home = QDir::homePath();
+    if (home.size() > 1) {
+        text.replace(home, QStringLiteral("~"));
+    }
+    static const QRegularExpression kUsers(QStringLiteral("/Users/[^/\\s]+"));
+    text.replace(kUsers, QStringLiteral("/Users/~"));
+    return text;
+}
+
+QString recentLogProblems(const QString& settingsPath) {
+    static const QRegularExpression kProblem(QStringLiteral(" (Warning|Critical|Fatal) \\["));
+    QStringList found;
+    // the previous run's log first (it holds the crash if Spin Deck closed by itself), then this run's
+    for (const QString& name : {QStringLiteral("spindeck.log.1"), QStringLiteral("spindeck.log")}) {
+        QFile file(QDir(settingsPath).absoluteFilePath(name));
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+            continue;
+        }
+        if (file.size() > 2 * 1024 * 1024) {
+            file.seek(file.size() - 2 * 1024 * 1024); // only the end of a big log
+        }
+        const QStringList lines = QString::fromLocal8Bit(file.readAll()).split(QChar('\n'));
+        for (const QString& line : lines) {
+            if (kProblem.match(line).hasMatch()) {
+                found.append(hideUserNames(line.left(400)));
+            }
+        }
+    }
+    QString recent = found.mid(qMax(0, found.size() - kReportLines)).join(QChar('\n'));
+    if (recent.size() > kReportChars) {
+        recent = QChar(0x2026) + recent.right(kReportChars);
+    }
+    return recent.isEmpty() ? QStringLiteral("No warnings were logged.") : recent;
+}
+
+QUrl problemReportUrl(const QString& settingsPath) {
+    QUrl url(kIssueUrl);
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("template"), QStringLiteral("bug_report.yml"));
+    const QString build = VersionStore::gitDescribe();
+    query.addQueryItem(QStringLiteral("version"),
+            build.isEmpty() ? VersionStore::version()
+                            : QStringLiteral("%1 (%2)").arg(VersionStore::version(), build));
+    query.addQueryItem(QStringLiteral("mac"),
+            QStringLiteral("%1, %2").arg(QSysInfo::currentCpuArchitecture(),
+                    QSysInfo::prettyProductName()));
+    query.addQueryItem(QStringLiteral("error"), recentLogProblems(settingsPath));
+    url.setQuery(query.query(QUrl::FullyEncoded), QUrl::StrictMode);
+    return url;
+}
+// [End of AI-generated code]
 
 QString buildWhatsThis(const QString& title, const QString& text) {
     QString preparedTitle = title;
@@ -735,6 +804,30 @@ void WMainMenuBar::initialize() {
         slotVisitUrl(QUrl::fromLocalFile(settingsDirPath));
     });
     pHelpMenu->addAction(pHelpSettingsDir);
+
+    // Report a Problem (Spin Deck): opens the GitHub bug form filled in; nothing is sent until submitted
+    QString reportTitle = tr("&Report a Problem") + externalLinkSuffix;
+    QString reportText = tr("Open a Spin Deck bug report on GitHub with the version and "
+                            "recent warnings filled in.");
+    auto* pHelpReport = new QAction(reportTitle, this);
+    pHelpReport->setMenuRole(QAction::NoRole);
+    pHelpReport->setStatusTip(reportText);
+    pHelpReport->setWhatsThis(buildWhatsThis(reportTitle, reportText));
+    connect(pHelpReport, &QAction::triggered, this, [this, settingsDirPath] {
+        slotVisitUrl(problemReportUrl(settingsDirPath));
+    });
+    pHelpMenu->addAction(pHelpReport);
+
+    QString ideaTitle = tr("Suggest an &Idea") + externalLinkSuffix;
+    QString ideaText = tr("Suggest something you'd like Spin Deck to do.");
+    auto* pHelpIdea = new QAction(ideaTitle, this);
+    pHelpIdea->setMenuRole(QAction::NoRole);
+    pHelpIdea->setStatusTip(ideaText);
+    pHelpIdea->setWhatsThis(buildWhatsThis(ideaTitle, ideaText));
+    connect(pHelpIdea, &QAction::triggered, this, [this] {
+        slotVisitUrl(QUrl(kIssueUrl + QStringLiteral("?template=idea.yml")));
+    });
+    pHelpMenu->addAction(pHelpIdea);
 
     // Translate This Application
     QString translateTitle = tr("&Translate This Application") + externalLinkSuffix;
