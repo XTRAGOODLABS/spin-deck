@@ -14,6 +14,11 @@ body:
     attributes:
       label: What did you expect?
   - type: input
+    id: version
+    attributes:
+      label: Spin Deck version
+      description: "Shown in the app's About box, or the name of the file you downloaded"
+  - type: input
     id: mac
     attributes:
       label: Your Mac
@@ -23,6 +28,12 @@ body:
     attributes:
       label: Controller (if any)
       description: For example "Hercules Inpulse T7"
+  - type: textarea
+    id: error
+    attributes:
+      label: Error message (if any)
+      description: Copy any error text you saw and paste it here.
+      render: text
   - type: textarea
     id: screenshots
     attributes:
