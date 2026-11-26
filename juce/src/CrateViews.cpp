@@ -969,6 +969,7 @@ CrateLibrary::CrateLibrary(const juce::File& metadataDirectory)
     table.getHeader().addColumn("Year", 9, 56, 44, 90, fixed);
     table.getHeader().addColumn("Duration", 3, 74, 60, 120, fixed);
     table.setTitle("CRATE tracks");
+    table.setMultipleSelectionEnabled(true);
     addAndMakeVisible(table);
     for (std::size_t i = 0; i < route.size(); ++i) {
         route[i].setButtonText(juce::String(i + 1));
@@ -2063,10 +2064,24 @@ void CrateLibrary::cellClicked(int row, int, const juce::MouseEvent& event) {
     if (!event.mods.isPopupMenu() || !juce::isPositiveAndBelow(row, getNumRows())) {
         return;
     }
-    table.selectRow(row);
+    if (!table.isRowSelected(row)) {
+        table.selectRow(row);
+    }
+    std::vector<juce::File> chosen;
+    const auto selection = table.getSelectedRows();
+    for (int i = 0; i < selection.size(); ++i) {
+        if (juce::isPositiveAndBelow(selection[i], getNumRows())) {
+            chosen.push_back(tracks[results[static_cast<std::size_t>(selection[i])]].file);
+        }
+    }
     const auto file = tracks[results[static_cast<std::size_t>(row)]].file;
     const auto state = readTrackContext ? readTrackContext() : context;
     juce::PopupMenu menu;
+    const auto count = static_cast<int>(chosen.size());
+    const auto which = count == 1 ? juce::String("this song") : juce::String(count) + " songs";
+    menu.addItem("Make Stems for " + which, [this, chosen] { makeStemsFor(chosen); });
+    menu.addItem("Analyze BPM and key for " + which, [this, chosen] { analyzeFiles(chosen, false); });
+    menu.addSeparator();
     for (int i = 0; i < visibleDecks; ++i) {
         const bool playing = state.decks[static_cast<std::size_t>(i)].playing;
         menu.addItem("Load on Deck " + juce::String(i + 1) + (playing ? "  (playing)" : ""),
@@ -2248,12 +2263,99 @@ void CrateLibrary::Sidebar::paintListBoxItem(int row, juce::Graphics& g, int wid
             juce::Justification::centredLeft, true);
 }
 
-void CrateLibrary::Sidebar::listBoxItemClicked(int row, const juce::MouseEvent&) {
+void CrateLibrary::Sidebar::listBoxItemClicked(int row, const juce::MouseEvent& event) {
     const int playlist = playlistFor(row);
     if (playlist == -2) {
         return;
     }
+    if (event.mods.isPopupMenu()) {
+        const auto files = owner.playlistFiles(playlist);
+        const auto name = getNameForRow(row);
+        juce::PopupMenu menu;
+        if (playlist >= 0) {
+            menu.addItem("Analyze BPM and key for " + name + " (" + juce::String(files.size()) + ")",
+                    [safe = SafePointer<CrateLibrary>(&owner), files] { if (safe) safe->analyzeFiles(files, false); });
+        } else {
+            // The whole library is large, so only fill in songs that were never analyzed.
+            menu.addItem("Analyze songs missing BPM or key",
+                    [safe = SafePointer<CrateLibrary>(&owner), files] { if (safe) safe->analyzeFiles(files, true); });
+        }
+        if (playlist >= 0) {
+            menu.addItem("Make Stems for " + name, [safe = SafePointer<CrateLibrary>(&owner), files] {
+                if (safe) safe->makeStemsFor(files);
+            });
+        }
+        menu.showMenuAsync(juce::PopupMenu::Options{});
+        return;
+    }
     owner.playlistPicker.setSelectedId(playlist == -1 ? 1 : playlist + 2, juce::sendNotificationSync);
+}
+
+std::vector<juce::File> CrateLibrary::playlistFiles(int playlist) const {
+    std::vector<juce::File> files;
+    if (playlist < 0) {
+        for (const auto& track : tracks) {
+            files.push_back(track.file);
+        }
+    } else if (juce::isPositiveAndBelow(playlist, static_cast<int>(playlists.size()))) {
+        files = playlists[static_cast<std::size_t>(playlist)].files;
+    }
+    return files;
+}
+
+void CrateLibrary::makeStemsFor(const std::vector<juce::File>& files) {
+    juce::Array<juce::File> queue;
+    int skipped = 0, missing = 0;
+    for (const auto& file : files) {
+        if (!file.existsAsFile()) {
+            ++missing;
+        } else if (hasStems(file)) {
+            ++skipped; // Already a stem file, or its stems already exist.
+        } else {
+            queue.addIfNotAlreadyThere(file);
+        }
+    }
+    if (!queue.isEmpty() && onMakeStems) {
+        onMakeStems(queue);
+    }
+    juce::String note = queue.isEmpty() ? juce::String("No songs need stems")
+                                        : "Making stems for " + juce::String(queue.size()) +
+                                                (queue.size() == 1 ? " song" : " songs");
+    if (skipped > 0) {
+        note << "  (" << skipped << " already have stems)";
+    }
+    if (missing > 0) {
+        note << "  (" << missing << " missing)";
+    }
+    playlistStatus.setText(note, juce::dontSendNotification);
+    resized();
+}
+
+void CrateLibrary::analyzeFiles(const std::vector<juce::File>& files, bool onlyMissing) {
+    int queued = 0;
+    for (const auto& file : files) {
+        const auto found = std::find_if(tracks.begin(), tracks.end(), [&](const auto& item) { return item.file == file; });
+        if (found == tracks.end()) {
+            if (file.existsAsFile()) {
+                addTrack(file); // New to the library: adding it analyzes it.
+                ++queued;
+            }
+            continue;
+        }
+        if (!found->available || (onlyMissing && found->analyzed && found->bpm && found->key)) {
+            continue;
+        }
+        // Analyze again: detected BPM and key are refreshed; a beat grid you set yourself is kept.
+        found->analyzed = false;
+        found->key.reset();
+        found->bpm.reset();
+        analyzeTrack(*found);
+        ++queued;
+    }
+    playlistStatus.setText("Analyzing " + juce::String(queued) + (queued == 1 ? " song" : " songs"),
+            juce::dontSendNotification);
+    resized();
+    table.repaint();
 }
 
 void CrateLibrary::showAddMenu() {

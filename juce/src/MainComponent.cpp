@@ -1024,6 +1024,7 @@ MainComponent::MainComponent()
         return library.quickSaveMix(incoming == 0 ? 1 : 0, incoming);
     };
     library.readTrackContext = [this] { return mixer.trackContext(); };
+    library.onMakeStems = [this](const juce::Array<juce::File>& files) { stemQueue->addTracks(files); };
     library.onLoad = [this](int index, const juce::File& file) {
         panels[static_cast<std::size_t>(index)]->loadFromUser(file);
     };
@@ -1211,11 +1212,21 @@ MainComponent::MainComponent()
         stemQueue->toFront(true);
     };
     addAndMakeVisible(makeStemsButton);
-    stemNote.setFont(juce::FontOptions(11.0f));
-    stemNote.setColour(juce::Label::textColourId, crate::muted);
-    stemNote.setJustificationType(juce::Justification::centredRight);
-    stemNote.setInterceptsMouseClicks(false, false);
-    addAndMakeVisible(stemNote);
+    // Stems are made from the library's right-click menu. This note shows progress; click it to cancel.
+    makeStemsButton.setVisible(false);
+    stemNote.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+    stemNote.setColour(juce::TextButton::textColourOffId, crate::green);
+    stemNote.getProperties().set("fontSize", 11.0f);
+    stemNote.setTooltip("Stems being made. Click to cancel.");
+    stemNote.onClick = [this] {
+        juce::PopupMenu menu;
+        menu.addItem("Cancel the song being split", [this] { stemQueue->cancelCurrent(); });
+        const int waiting = stemQueue->waitingCount();
+        menu.addItem("Cancel the " + juce::String(waiting) + " waiting", waiting > 0, false,
+                [this] { stemQueue->cancelWaiting(); });
+        menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(stemNote));
+    };
+    addChildComponent(stemNote);
 
     record.setTooltip("Record the stereo master mix as a 24-bit WAV file.");
     record.onClick = [this] {
@@ -1320,8 +1331,9 @@ void MainComponent::timerCallback() {
             library.refreshStemMarkers();
         }
         const auto note = stemQueue ? stemQueue->progressNote() : juce::String{};
-        if (note != stemNote.getText()) {
-            stemNote.setText(note, juce::dontSendNotification);
+        if (note != stemNote.getButtonText()) {
+            stemNote.setButtonText(note);
+            stemNote.setVisible(note.isNotEmpty());
         }
         library.setTrackContext(mixer.trackContext());
     }
@@ -1546,9 +1558,8 @@ void MainComponent::resized() {
     }
     logoArea = toolbar.removeFromRight(100);
     audioSettings.setBounds(toolbar.removeFromRight(80));
-    makeStemsButton.setBounds(toolbar.removeFromRight(96));
     // Shrinks first on narrow windows.
-    stemNote.setBounds(toolbar.removeFromRight(juce::jlimit(0, 200, toolbar.getWidth() - 330)).reduced(4, 0));
+    stemNote.setBounds(toolbar.removeFromRight(juce::jlimit(0, 260, toolbar.getWidth() - 330)).reduced(4, 0));
     record.setBounds(toolbar.removeFromRight(100));
     clock.setBounds(toolbar.removeFromRight(84));
     t7Button.setBounds(toolbar.removeFromRight(128));

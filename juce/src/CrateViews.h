@@ -148,6 +148,8 @@ class CrateLibrary final : public juce::Component, public juce::FileDragAndDropT
     // Save a GOOD MIX right away (from the T7), keeping the current Sync and Key Lock setup.
     bool quickSaveMix(std::size_t outgoingDeck, std::size_t incomingDeck);
     std::function<FourDeckMixer::TrackContext()> readTrackContext;
+    // Songs to split into stems, chosen from a right-click menu.
+    std::function<void(const juce::Array<juce::File>&)> onMakeStems;
     std::function<void(int, const juce::File&)> onLoad;
     std::function<void(int, const juce::File&)> onLoadSuggested;
     std::function<void(int, const juce::File&, int, const juce::File&,
@@ -227,6 +229,9 @@ class CrateLibrary final : public juce::Component, public juce::FileDragAndDropT
         CrateLibrary& owner;
     };
     void showAddMenu();
+    void makeStemsFor(const std::vector<juce::File>&);
+    void analyzeFiles(const std::vector<juce::File>&, bool onlyMissing);
+    std::vector<juce::File> playlistFiles(int playlist) const; // -1 is the whole library.
     void showMixMenu();
 
     TrackMetadataStore metadata;

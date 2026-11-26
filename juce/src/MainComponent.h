@@ -180,7 +180,7 @@ class MainComponent final : public juce::AudioAppComponent, public juce::DragAnd
     static constexpr int gridToolsWidth = 112;
     juce::Label buildLabel;
     juce::TextButton makeStemsButton{"MAKE STEMS"};
-    juce::Label stemNote;
+    juce::TextButton stemNote;
     std::unique_ptr<StemQueueWindow> stemQueue;
     juce::TextButton t7Button{"ENABLE T7"};
     juce::TextButton audioSettings{"AUDIO"};

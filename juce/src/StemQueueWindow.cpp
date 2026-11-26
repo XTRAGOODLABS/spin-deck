@@ -238,8 +238,7 @@ class StemQueueWindow::Queue final : public juce::Component, private juce::ListB
                 .withTitle("Set up Make Stems")
                 .withMessage("Install Demucs and its model locally? The one-time download is about 2 to 3 GB.")
                 .withButton("Install", 1)
-                .withButton("Cancel", 0)
-                .withAssociatedComponent(this);
+                .withButton("Cancel", 0);
         juce::AlertWindow::showAsync(options, [safe = SafePointer<Queue>(this), sources](int accepted) {
             if (safe && accepted == 1) {
                 safe->allowSetup = true;
@@ -265,6 +264,46 @@ class StemQueueWindow::Queue final : public juce::Component, private juce::ListB
         startNext();
     }
 
+  public:
+    void request(const juce::Array<juce::File>& sources) {
+        if (sources.isEmpty() || onPaused) {
+            return;
+        }
+        if (StemMaker::isReady() || allowSetup) {
+            enqueue(sources);
+        } else {
+            offerSetup(sources);
+        }
+    }
+
+    void cancelCurrent() {
+        for (auto& entry : entries) {
+            if (entry.state == State::running && cancellation && cancellation->request()) {
+                entry.state = State::cancelling;
+                entry.status = "Cancelling...";
+            }
+        }
+        save();
+        refresh();
+    }
+
+    void cancelWaiting() {
+        for (auto& entry : entries) {
+            if (entry.state == State::queued) {
+                entry.state = State::cancelled;
+                entry.status = "Cancelled";
+            }
+        }
+        save();
+        refresh();
+    }
+
+    int waitingCount() const {
+        return static_cast<int>(std::count_if(entries.begin(), entries.end(),
+                [](const auto& entry) { return entry.state == State::queued; }));
+    }
+
+  private:
     void cancelSelected() {
         const auto row = list.getSelectedRow();
         if (!juce::isPositiveAndBelow(row, getNumRows())) {
@@ -382,6 +421,23 @@ StemQueueWindow::StemQueueWindow(juce::Component* owner)
 
 void StemQueueWindow::pauseForQuit(std::function<void()> onPaused) {
     static_cast<Queue*>(getContentComponent())->pauseForQuit(std::move(onPaused));
+}
+
+void StemQueueWindow::addTracks(const juce::Array<juce::File>& files) {
+    static_cast<Queue*>(getContentComponent())->request(files);
+}
+
+void StemQueueWindow::cancelCurrent() {
+    static_cast<Queue*>(getContentComponent())->cancelCurrent();
+}
+
+void StemQueueWindow::cancelWaiting() {
+    static_cast<Queue*>(getContentComponent())->cancelWaiting();
+}
+
+int StemQueueWindow::waitingCount() const {
+    const auto* queue = dynamic_cast<const Queue*>(getContentComponent());
+    return queue ? queue->waitingCount() : 0;
 }
 
 juce::String StemQueueWindow::progressNote() const {
