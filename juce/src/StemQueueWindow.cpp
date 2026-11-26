@@ -53,6 +53,28 @@ class StemQueueWindow::Queue final : public juce::Component, private juce::ListB
         refresh();
     }
 
+    juce::String progressNote() const {
+        const Entry* running = nullptr;
+        int waiting = 0;
+        for (const auto& entry : entries) {
+            if (entry.state == State::running || entry.state == State::cancelling) {
+                running = &entry;
+            } else if (entry.state == State::queued) {
+                ++waiting;
+            }
+        }
+        if (running == nullptr && waiting == 0) {
+            return {};
+        }
+        juce::String note = "Stems: ";
+        note << (running != nullptr ? running->source.getFileNameWithoutExtension() + " " + running->status
+                                  : juce::String("starting"));
+        if (waiting > 0) {
+            note << " +" << waiting;
+        }
+        return note;
+    }
+
     void resized() override {
         auto area = getLocalBounds().reduced(12);
         auto toolbar = area.removeFromTop(34);
@@ -360,6 +382,11 @@ StemQueueWindow::StemQueueWindow(juce::Component* owner)
 
 void StemQueueWindow::pauseForQuit(std::function<void()> onPaused) {
     static_cast<Queue*>(getContentComponent())->pauseForQuit(std::move(onPaused));
+}
+
+juce::String StemQueueWindow::progressNote() const {
+    const auto* queue = dynamic_cast<const Queue*>(getContentComponent());
+    return queue ? queue->progressNote() : juce::String{};
 }
 
 void StemQueueWindow::closeButtonPressed() {

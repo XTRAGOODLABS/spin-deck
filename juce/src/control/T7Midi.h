@@ -2,6 +2,7 @@
 
 #include "control/T7Performance.h"
 #include <juce_audio_devices/juce_audio_devices.h>
+#include <optional>
 
 namespace spindeck {
 
@@ -19,6 +20,9 @@ class T7Midi final : private juce::MidiInputCallback, private juce::Timer {
     bool isConnected() const;
     std::function<void(int steps)> onBrowse;
     std::function<void(std::size_t deck)> onLoad;
+    // SHIFT + ASSIST: save a GOOD MIX that ends on this deck. Return true when saved.
+    std::function<bool(std::size_t deck)> onSaveMix;
+    void flashGoodMix(std::size_t deck);
 
   private:
     void handleIncomingMidiMessage(juce::MidiInput*, const juce::MidiMessage&) override;
@@ -36,6 +40,9 @@ class T7Midi final : private juce::MidiInputCallback, private juce::Timer {
     juce::AbstractFifo controlFifo{static_cast<int>(controls.size())};
     std::atomic<bool> controlsOverflow{false};
     int endpointPoll = 0;
+    std::optional<std::size_t> flashDeck;
+    juce::uint32 flashStartMs = 0;
+    T7Performance::Lights withGoodMixFlash(T7Performance::Lights lights);
 };
 
 }

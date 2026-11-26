@@ -17,6 +17,11 @@ inline const juce::Colour muted{0xffa4aeac};
 inline const juce::Colour green{0xff76dba0};
 inline const juce::Colour amber{0xffedb66c};
 
+// Spin Deck brand lettering uses Impact, like BeatDeck and GOOD MIXX.
+inline juce::FontOptions brandFont(float height) {
+    return juce::FontOptions("Impact", height, juce::Font::plain);
+}
+
 void paintWave(juce::Graphics&, juce::Rectangle<int>, const DeckEngine::Overview*, double playhead,
         const std::optional<TrackBeatGrid>& grid, bool follow, juce::Colour accent);
 }
@@ -66,6 +71,8 @@ class CrateLibrary final : public juce::Component, private juce::TableListBoxMod
     void addTrack(const juce::File&, std::optional<double> bpm = {}, double seconds = 0,
             std::optional<MusicalKey> key = {});
     void setDeckCount(int);
+    // Save a GOOD MIX right away (from the T7), keeping the current Sync and Key Lock setup.
+    bool quickSaveMix(std::size_t outgoingDeck, std::size_t incomingDeck);
     std::function<FourDeckMixer::TrackContext()> readTrackContext;
     std::function<void(int, const juce::File&)> onLoad;
     std::function<void(int, const juce::File&)> onLoadSuggested;
@@ -137,7 +144,7 @@ class CrateLibrary final : public juce::Component, private juce::TableListBoxMod
     std::vector<std::size_t> results;
     juce::TextEditor search;
     juce::TextButton add{"ADD FILES"}, importPlaylist{"IMPORT PLAYLIST"}, importOneLibrary{"IMPORT ONELIBRARY"};
-    juce::TextButton importMixxx{"IMPORT MIXXX"};
+    juce::TextButton importMixxx{"IMPORT SPIN DECK"};
     juce::ComboBox playlistPicker;
     juce::Label playlistStatus;
     std::array<juce::TextButton, 4> route;

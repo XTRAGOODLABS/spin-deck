@@ -105,6 +105,24 @@ The installed beta reproduced a mixer reset when disabling the T7. The disconnec
 
 T7 hot cue pads now preview saved cues while held on a paused deck, then pause and return to the cue on release. The Deck 2 regression uses real rendered audio and failed against the earlier silent seek. In the installed beta, “The Prowl” had Hot Cue 1 at 0.239 seconds and the on-screen cue button recalled that position. A separate replacement check loaded “Deep Inside You Go” over “Convoy.” The mixer rendered silence until Play, then matched the new track decoder sample-for-sample. The reported overlap was not reproduced.
 
+## Carried over from the production Spin Deck plan
+
+Added on `spindeck-juce` after the beta commit:
+
+- **SHIFT + ASSIST on the T7 saves a GOOD MIX.** The pressed deck's song is saved as working after the other deck's song, with the current sync leader, Sync and Key Lock. A loop or cue picked earlier for the same pair is kept. That deck's pads flash green (on, off, on, as in the production mapping) and the GOOD MIXX panel shows "GOOD MIX saved" with both titles. Nothing is saved, and the panel says so, unless both decks hold different songs.
+- **Impact lettering** for the SPIN DECK, CRATE, Crate OS and GOOD MIXX names.
+- **Small stem progress note** in the toolbar beside MAKE STEMS while a batch runs. The queue window no longer needs to stay open to see progress.
+- **No Mixxx naming in the app.** The library import button now reads IMPORT SPIN DECK.
+
+Already present in the beta and confirmed in the code: SHIFT + PARAM left toggles Quantize; hot cues and Play start instantly with no wind-up; settings live in their own `Spin Deck JUCE` folder; a finished `.stem.mp4` beside a track replaces it whenever that track is loaded, including stems made by production Spin Deck.
+
+Still open from the production plan:
+
+- Four real layout skins, starting with ON AIR and POCKET.
+- Ulanzi Dial controlling master volume through a Spin Deck preset.
+- BeatDeck integration.
+- A STEMS marker on library rows that will load as stems.
+
 ## Blockers and unverified areas
 
 - An attended Apple Silicon test verified both T7 motors starting and stopping, and the listener confirmed audible left-platter scratching through the T7 stereo output. The host-side scratch onset median was 4.23 ms from the latest MIDI angle receipt to scheduled CoreAudio output. Physical-motion-to-analog latency and right-platter listening still need direct measurement. ENABLE T7 selects its master and headphone outputs. AUDIO exposes the CoreAudio device and channel selection.
@@ -113,7 +131,7 @@ T7 hot cue pads now preview saved cues while held on a paused deck, then pause a
 - JUCE distribution licensing must be deliberately selected before binaries are published: AGPLv3 path or an appropriate commercial JUCE license.
 - Production Mixxx runtime performance could not be measured because no built app or dependency environment was present.
 - Crate OS playlist import uses local export files. Direct synchronization and richer library exchange remain pending.
-- Automatic variable beat-grid analysis and bar downbeat detection remain pending, along with automatic stem replacement in the library, GOOD MIXX standalone app history import and undo, production effect-chain parity and plug-in instantiation. Beat analysis and key lock still need listening tests on representative music and a physical DJ setup.
+- Automatic variable beat-grid analysis and bar downbeat detection remain pending, along with GOOD MIXX standalone app history import and undo, production effect-chain parity and plug-in instantiation. Beat analysis and key lock still need listening tests on representative music and a physical DJ setup.
 
 ## Build commands
 

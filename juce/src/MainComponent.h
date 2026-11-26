@@ -98,6 +98,7 @@ class MainComponent final : public juce::AudioAppComponent, private juce::Timer 
     std::array<std::unique_ptr<DeckPanel>, 4> panels;
     juce::Label buildLabel;
     juce::TextButton makeStemsButton{"MAKE STEMS"};
+    juce::Label stemNote;
     std::unique_ptr<StemQueueWindow> stemQueue;
     juce::TextButton t7Button{"ENABLE T7"};
     juce::TextButton audioSettings{"AUDIO"};

@@ -25,7 +25,7 @@ bool T7Performance::accepts(int status, int note) {
     }
     if (status == 0x94 || status == 0x95) {
         return note == 1 || note == 2 || note == 5 || note == 6 || note == 7 || note == 9 ||
-                note == 10 || note == 0x0d || note == 0x2c || note == 0x53 ||
+                note == 10 || note == 0x0d || note == 0x2c || note == 0x50 || note == 0x53 ||
                 note == 0x52 || note == 0x54 || note == 0x58;
     }
     if (status == 0x90) {

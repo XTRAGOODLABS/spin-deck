@@ -174,6 +174,11 @@ void T7Midi::timerCallback() {
                 if (onBrowse && packet.second) {
                     onBrowse((packet.second < 64 ? 1 : -1) * (packet.status >= 0xb4 ? 10 : 1));
                 }
+            } else if (packet.first == 0x50 && (packet.status == 0x94 || packet.status == 0x95)) {
+                const std::size_t deck = packet.status == 0x94 ? 0 : 1;
+                if (packet.second && onSaveMix && onSaveMix(deck)) {
+                    flashGoodMix(deck);
+                }
             } else if (packet.first == 0x0d && (packet.status & 0xf0) <= 0x90) {
                 if (onLoad && (packet.status & 0xf0) == 0x90 && packet.second) {
                     onLoad(packet.status == 0x91 || packet.status == 0x94 ? 0 : 1);
@@ -183,10 +188,32 @@ void T7Midi::timerCallback() {
             }
         });
     }
-    sendLights(performance.lights(mixer));
+    sendLights(withGoodMixFlash(performance.lights(mixer)));
     for (std::size_t deck = 0; deck < lastSent.size(); ++deck) {
         sendMotor(deck, mixer.t7MotorState(deck));
     }
+}
+
+void T7Midi::flashGoodMix(std::size_t deck) {
+    flashDeck = deck;
+    flashStartMs = juce::Time::getMillisecondCounter();
+}
+
+// Same pattern as the production mapping: green on, off, green on, then back to normal.
+T7Performance::Lights T7Midi::withGoodMixFlash(T7Performance::Lights lights) {
+    if (!flashDeck) {
+        return lights;
+    }
+    const auto elapsed = juce::Time::getMillisecondCounter() - flashStartMs;
+    if (elapsed >= 1200) {
+        flashDeck.reset();
+        return lights;
+    }
+    if (elapsed < 250 || elapsed >= 400) {
+        constexpr uint8_t goodMixGreen = 0x1c;
+        lights[5 + *flashDeck].fill(goodMixGreen);
+    }
+    return lights;
 }
 
 }

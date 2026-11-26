@@ -393,7 +393,7 @@ CrateLibrary::CrateLibrary(const juce::File& metadataDirectory)
     addAndMakeVisible(importPlaylist);
     importOneLibrary.onClick = [this] { browseOneLibrary(); };
     addAndMakeVisible(importOneLibrary);
-    importMixxx.setTooltip("Copy a Spin Deck or Mixxx library into CRATE.");
+    importMixxx.setTooltip("Copy your existing Spin Deck library into CRATE.");
     importMixxx.onClick = [this] { browseMixxx(); };
     addAndMakeVisible(importMixxx);
     playlistPicker.setTitle("CRATE playlist");
@@ -670,6 +670,49 @@ void CrateLibrary::chooseMixToSave() {
     }
 }
 
+bool CrateLibrary::quickSaveMix(std::size_t from, std::size_t to) {
+    const auto state = readTrackContext ? readTrackContext() : context;
+    if (from >= state.decks.size() || to >= state.decks.size() || from == to) {
+        return false;
+    }
+    const auto& fromDeck = state.decks[from];
+    const auto& toDeck = state.decks[to];
+    if (fromDeck.file == juce::File{} || toDeck.file == juce::File{} ||
+            sameSessionTrack(fromDeck.file, toDeck.file)) {
+        saveStatus.setColour(juce::Label::textColourId, crate::amber);
+        saveStatus.setText("Load a song on both decks to save a mix", juce::dontSendNotification);
+        resized();
+        return false;
+    }
+    using Leader = GoodMixxHistory::TempoSetup::Leader;
+    GoodMixxHistory::TempoSetup tempo;
+    if (state.leader == from) {
+        tempo.leader = Leader::outgoing;
+    } else if (state.leader == to) {
+        tempo.leader = Leader::incoming;
+    }
+    tempo.outgoing = {fromDeck.sync, fromDeck.keyLock};
+    tempo.incoming = {toDeck.sync, toDeck.keyLock};
+    GoodMixxHistory::Points points;
+    // Keep any loop or cue picked earlier for this same pair.
+    for (const auto& mix : history.mixes()) {
+        if (matchesSavedSong(mix.outgoing, fromDeck.file) && matchesSavedSong(mix.incoming, toDeck.file) &&
+                mix.points) {
+            points = *mix.points;
+        }
+    }
+    points.tempo = tempo;
+    const bool saved = history.save(fromDeck.file, toDeck.file, points);
+    saveStatus.setColour(juce::Label::textColourId, saved ? crate::green : crate::amber);
+    saveStatus.setText(saved ? juce::String::fromUTF8("GOOD MIX saved \xE2\x9C\x93  ") + displayTitle(fromDeck.file) +
+                    juce::String::fromUTF8(" \xE2\x86\x92 ") + displayTitle(toDeck.file)
+                             : juce::String("Could not save mix"),
+            juce::dontSendNotification);
+    updateMixes();
+    resized();
+    return saved;
+}
+
 void CrateLibrary::chooseMixPoints(const juce::File& outgoing, const juce::File& incoming,
         GoodMixxHistory::TempoSetup tempo) {
     const auto from = metadata.load(outgoing);
@@ -756,6 +799,7 @@ void CrateLibrary::chooseMixPoints(const juce::File& outgoing, const juce::File&
                 }
                 points.tempo = tempo;
                 const bool saved = safe->history.save(outgoing, incoming, points);
+                safe->saveStatus.setColour(juce::Label::textColourId, saved ? crate::green : crate::amber);
                 safe->saveStatus.setText(saved ? "Mix saved" : "Could not save mix", juce::dontSendNotification);
                 safe->updateMixes();
             }), true);
@@ -1158,7 +1202,7 @@ void CrateLibrary::browseMixxx() {
     }
     const auto data = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory);
     const auto production = data.getChildFile("Application Support/Spin Deck/spindeck.sqlite");
-    chooser = std::make_unique<juce::FileChooser>("Import Spin Deck or Mixxx library",
+    chooser = std::make_unique<juce::FileChooser>("Import your Spin Deck library",
             production.existsAsFile() ? production : data, "*.sqlite;*.db");
     chooser->launchAsync(juce::FileBrowserComponent::openMode |
             juce::FileBrowserComponent::canSelectFiles, [safe = SafePointer<CrateLibrary>(this)](const auto& picker) {
@@ -1361,11 +1405,11 @@ void CrateLibrary::paint(juce::Graphics& g) {
     g.drawVerticalLine(mixPanel.getX(), 0, static_cast<float>(getHeight()));
     auto side = sidebar.reduced(12, 11);
     g.setColour(crate::text);
-    g.setFont(juce::FontOptions(15, juce::Font::bold));
+    g.setFont(crate::brandFont(17));
     g.drawText("Crate OS", side.removeFromTop(21), juce::Justification::centredLeft);
     auto right = mixPanel.reduced(12, 11);
     g.setColour(crate::text);
-    g.setFont(juce::FontOptions(15, juce::Font::bold));
+    g.setFont(crate::brandFont(17));
     g.drawText(juce::String::fromUTF8("GOOD MIXX\xE2\x84\xA2"), right.removeFromTop(21),
             juce::Justification::centredLeft);
 }

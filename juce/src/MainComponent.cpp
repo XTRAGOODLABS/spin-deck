@@ -459,6 +459,10 @@ MainComponent::MainComponent()
             library.loadSelected(static_cast<int>(index));
         }
     };
+    // SHIFT + ASSIST on a T7 deck: that deck's song worked after the other deck's song.
+    t7.onSaveMix = [this](std::size_t incoming) {
+        return library.quickSaveMix(incoming == 0 ? 1 : 0, incoming);
+    };
     library.readTrackContext = [this] { return mixer.trackContext(); };
     library.onLoad = [this](int index, const juce::File& file) {
         panels[static_cast<std::size_t>(index)]->loadFile(file);
@@ -600,6 +604,11 @@ MainComponent::MainComponent()
         stemQueue->toFront(true);
     };
     addAndMakeVisible(makeStemsButton);
+    stemNote.setFont(juce::FontOptions(11.0f));
+    stemNote.setColour(juce::Label::textColourId, crate::muted);
+    stemNote.setJustificationType(juce::Justification::centredRight);
+    stemNote.setInterceptsMouseClicks(false, false);
+    addAndMakeVisible(stemNote);
 
     record.setTooltip("Record the stereo master mix as a 24-bit WAV file.");
     record.onClick = [this] {
@@ -695,6 +704,10 @@ void MainComponent::timerCallback() {
     echoView.refresh();
     if (++suggestionTicks == 6) {
         suggestionTicks = 0;
+        const auto note = stemQueue ? stemQueue->progressNote() : juce::String{};
+        if (note != stemNote.getText()) {
+            stemNote.setText(note, juce::dontSendNotification);
+        }
         library.setTrackContext(mixer.trackContext());
     }
     repaint(waveformArea);
@@ -794,10 +807,10 @@ void MainComponent::setDeckCount(int visible) {
 void MainComponent::paint(juce::Graphics& g) {
     g.fillAll(crate::background);
     g.setColour(crate::text);
-    g.setFont(juce::FontOptions(22, juce::Font::bold));
+    g.setFont(crate::brandFont(26));
     g.drawText("SPIN DECK", 14, 8, 118, 32, juce::Justification::centredLeft);
     g.setColour(crate::green);
-    g.setFont(juce::FontOptions(12, juce::Font::bold));
+    g.setFont(crate::brandFont(15));
     g.drawText("CRATE", 131, 9, 58, 31, juce::Justification::centredLeft);
     g.setColour(crate::line);
     g.fillRect(waveformArea);
@@ -822,6 +835,8 @@ void MainComponent::resized() {
     audioSettings.setBounds(toolbar.removeFromRight(72).reduced(2, 4));
     t7Button.setBounds(toolbar.removeFromRight(128).reduced(2, 4));
     makeStemsButton.setBounds(toolbar.removeFromRight(111).reduced(2, 4));
+    // Shrinks first on narrow windows so the record and booth controls keep their room.
+    stemNote.setBounds(toolbar.removeFromRight(juce::jlimit(0, 200, toolbar.getWidth() - 205)).reduced(4, 4));
     record.setBounds(toolbar.removeFromRight(82).reduced(2, 4));
     booth.setBounds(toolbar.removeFromRight(75).reduced(6, 4));
     boothLabel.setBounds(toolbar.removeFromRight(48));
