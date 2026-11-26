@@ -1,4 +1,7 @@
 #include "MainComponent.h"
+
+#include <algorithm>
+#include <map>
 #include "StemQueueWindow.h"
 #include "audio/TrackTags.h"
 #include "audio/StemMaker.h"
@@ -1347,11 +1350,14 @@ MainComponent::MainComponent()
         }
     }
     setAudioChannels(0, 2);
+    setUpControllers();
+    restoreTimecode();
     startTimerHz(24);
 }
 
 MainComponent::~MainComponent() {
     stopTimer();
+    controllers.clear();
     t7.disconnect();
     samplerLoader.removeAllJobs(false, -1);
     stemQueue.reset();
@@ -1372,6 +1378,16 @@ void MainComponent::timerCallback() {
         toast.setVisible(false);
     }
     autoDjTick();
+    for (std::size_t d = 0; d < timecodeInputs.size(); ++d) {
+        if (timecodeInputs[d] < 0) continue;
+        const bool signal = mixer.timecodeState(d).signal;
+        if (signal && !timecodeSignalShown[d]) showToast("DECK " + juce::String(static_cast<int>(d) + 1) + ": TIMECODE SIGNAL OK");
+        timecodeSignalShown[d] = signal;
+    }
+    if (++controllerScanTicks >= 48) {
+        controllerScanTicks = 0;
+        refreshControllers();
+    }
     if (!micArea.isEmpty()) {
         repaint(micMeter);
     }
@@ -1470,6 +1486,13 @@ void MainComponent::setMicInput(bool enabled) {
         setup.useDefaultInputChannels = false;
         setup.inputChannels.clear();
         setup.inputChannels.setRange(0, 2, true);
+        for (const int first : timecodeInputs) {
+            if (first >= 0) setup.inputChannels.setRange(first, 2, true);
+        }
+    } else if (std::any_of(timecodeInputs.begin(), timecodeInputs.end(), [](int c) { return c >= 0; })) {
+        mixer.setMicEnabled(false);
+        showToast("MIC OFF");
+        return; // Inputs stay open for timecode.
     } else {
         setup.inputDeviceName = {};
         setup.useDefaultInputChannels = false;
@@ -1664,6 +1687,8 @@ void MainComponent::showSettingsMenu() {
         fonts.addItem(fontNames[i], true, i == fontIndex, [this, i] { setFontChoice(i, true); });
     }
     menu.addSubMenu("Font", fonts);
+    menu.addSubMenu("Controllers", controllersMenu());
+    menu.addSubMenu("Timecode vinyl / Phase", timecodeMenu());
     menu.addSeparator();
     menu.addItem(juce::String::fromUTF8("Master volume up   \xE2\x8C\x83\xE2\x8C\xA5\xE2\x8C\x98]"), [this] { changeMasterVolume(0.02f); });
     menu.addItem(juce::String::fromUTF8("Master volume down   \xE2\x8C\x83\xE2\x8C\xA5\xE2\x8C\x98["), [this] { changeMasterVolume(-0.02f); });
@@ -1951,6 +1976,278 @@ void MainComponent::resized() {
     }
     area.removeFromTop(4);
     library.setBounds(area);
+}
+
+//==============================================================================
+// AI-written (Claude). Review before relying on it.
+// Controllers other than the T7: each MIDI device can be given a Mixxx mapping, which is
+// remembered and started again whenever that device is plugged in.
+// AI-written (Claude). End.
+void MainComponent::setUpControllers() {
+    mixxx::ControlSurface::Hooks hooks;
+    hooks.browse = [this](int steps) { library.moveSelection(steps); };
+    hooks.load = [this](std::size_t deck, bool) {
+        if (!mixer.deck(deck).isPlaying()) library.loadSelected(static_cast<int>(deck));
+    };
+    hooks.loadIntoFirstStopped = [this] {
+        for (int deck = 0; deck < 4; ++deck) {
+            if (!mixer.deck(static_cast<std::size_t>(deck)).isPlaying()) {
+                library.loadSelected(deck);
+                return;
+            }
+        }
+    };
+    hooks.toggleRecording = [this] { record.triggerClick(); };
+    hooks.isRecording = [this] { return mixer.isRecording(); };
+    hooks.autoDjFadeNow = [this] {
+        const int playing = mixer.deck(0).isPlaying() ? 0 : mixer.deck(1).isPlaying() ? 1 : -1;
+        if (playing >= 0 && autoDj.preloaded == 1 - playing && !autoDj.fading) startAutoDjFade(playing, 1 - playing);
+    };
+    hooks.autoDjSkip = [this] {
+        if (autoDj.preloaded >= 0) autoDj.preloaded = -1;
+        else if (!autoDj.queue.empty()) autoDj.queue.pop_front();
+    };
+    hooks.isAutoDjOn = [this] { return !autoDj.queue.empty() || autoDj.preloaded >= 0 || autoDj.fading; };
+    controlSurface = std::make_unique<mixxx::ControlSurface>(mixer, std::move(hooks));
+    refreshControllers();
+}
+
+juce::var MainComponent::controllerChoices() const {
+    const auto settings = juce::JSON::parse(settingsFile());
+    const auto choices = settings.getProperty("controllers", {});
+    return choices.getDynamicObject() != nullptr ? choices : juce::var(new juce::DynamicObject());
+}
+
+void MainComponent::refreshControllers() {
+    juce::StringArray devices;
+    for (const auto& device : juce::MidiInput::getAvailableDevices()) devices.add(device.name);
+    // Stop the ones whose device went away.
+    for (auto it = controllers.begin(); it != controllers.end();) {
+        if (!devices.contains((*it)->deviceName())) {
+            showToast("CONTROLLER UNPLUGGED: " + (*it)->deviceName());
+            it = controllers.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    const auto choices = controllerChoices();
+    for (const auto& device : devices) {
+        const auto path = choices.getProperty(device, {}).toString();
+        if (path.isEmpty() || controllerFailures.contains(device)) continue;
+        const bool running = std::any_of(controllers.begin(), controllers.end(),
+                [&](const auto& c) { return c->deviceName() == device; });
+        if (!running) startController(device, juce::File(path));
+    }
+    for (int i = controllerFailures.size(); --i >= 0;) {
+        if (!devices.contains(controllerFailures[i])) controllerFailures.remove(i); // try again when plugged back in
+    }
+    lastMidiDevices = devices;
+}
+
+void MainComponent::startController(const juce::String& device, const juce::File& mappingFile) {
+    juce::String error;
+    auto mapping = mixxx::loadMapping(mappingFile, &error);
+    if (!mapping) {
+        controllerFailures.addIfNotAlreadyThere(device);
+        showToast("CONTROLLER: " + (error.isNotEmpty() ? error : "mapping not found"));
+        return;
+    }
+    auto controller = std::make_unique<mixxx::MixxxController>(mixer, *controlSurface);
+    const auto result = controller->startOnDevice(*mapping, device);
+    if (result.failed()) {
+        controllerFailures.addIfNotAlreadyThere(device);
+        showToast("CONTROLLER: " + result.getErrorMessage());
+        return;
+    }
+    showToast("CONTROLLER READY: " + mapping->name);
+    controllers.push_back(std::move(controller));
+}
+
+void MainComponent::chooseControllerMapping(const juce::String& device, const juce::String& mappingPath) {
+    auto choices = controllerChoices();
+    if (mappingPath.isEmpty()) choices.getDynamicObject()->removeProperty(device);
+    else choices.getDynamicObject()->setProperty(device, mappingPath);
+    saveSetting("controllers", choices);
+    controllerFailures.removeString(device);
+    controllers.erase(std::remove_if(controllers.begin(), controllers.end(),
+            [&](const auto& c) { return c->deviceName() == device; }), controllers.end());
+    if (mappingPath.isNotEmpty()) {
+        if (t7.isConnected() && device.containsIgnoreCase("Inpulse T7")) t7.disconnect();
+        startController(device, juce::File(mappingPath));
+    } else {
+        showToast("CONTROLLER OFF: " + device);
+    }
+}
+
+juce::PopupMenu MainComponent::controllersMenu() {
+    juce::PopupMenu menu;
+    const auto devices = juce::MidiInput::getAvailableDevices();
+    if (devices.isEmpty()) {
+        menu.addItem("No MIDI controllers plugged in", false, false, [] {});
+        return menu;
+    }
+    const auto mappings = mixxx::listMappings();
+    const auto choices = controllerChoices();
+    for (const auto& device : devices) {
+        const auto name = device.name;
+        const auto chosen = choices.getProperty(name, {}).toString();
+        juce::PopupMenu sub;
+        const bool isT7 = name.containsIgnoreCase("Inpulse T7");
+        sub.addItem(isT7 ? "Spin Deck's own T7 support (CONNECT T7 button)" : "Off", true, chosen.isEmpty(),
+                [this, name] { chooseControllerMapping(name, {}); });
+        std::vector<std::pair<int, const mixxx::MappingInfo*>> ranked;
+        for (const auto& m : mappings) {
+            if (const int score = mixxx::matchScore(m, name); score > 0) ranked.emplace_back(score, &m);
+        }
+        std::sort(ranked.begin(), ranked.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+        if (!ranked.empty()) {
+            sub.addSectionHeader("Suggested for this controller");
+            for (std::size_t i = 0; i < ranked.size() && i < 6; ++i) {
+                const auto* m = ranked[i].second;
+                const auto path = m->file.getFullPathName();
+                sub.addItem(m->name, true, chosen == path, [this, name, path] { chooseControllerMapping(name, path); });
+            }
+        }
+        juce::PopupMenu all;
+        std::map<juce::String, juce::PopupMenu> byMaker;
+        for (const auto& m : mappings) {
+            const auto maker = m.name.upToFirstOccurrenceOf(" ", false, false);
+            const auto path = m.file.getFullPathName();
+            byMaker[maker].addItem(m.name, true, chosen == path, [this, name, path] { chooseControllerMapping(name, path); });
+        }
+        for (auto& [maker, items] : byMaker) all.addSubMenu(maker, items);
+        sub.addSubMenu("All mappings (" + juce::String(static_cast<int>(mappings.size())) + ")", all);
+        for (const auto& c : controllers) {
+            if (c->deviceName() == name && !c->missingScriptFunctions().isEmpty()) {
+                sub.addSeparator();
+                sub.addItem("This mapping has " + juce::String(c->missingScriptFunctions().size()) +
+                        " buttons that do nothing (a mistake in the mapping)", false, false, [] {});
+            }
+        }
+        const bool running = std::any_of(controllers.begin(), controllers.end(), [&](const auto& c) { return c->deviceName() == name; });
+        menu.addSubMenu(name + (running ? juce::String::fromUTF8("  \xE2\x97\x8F") : juce::String{}), sub);
+    }
+    return menu;
+}
+
+//==============================================================================
+// AI-written (Claude). Review before relying on it.
+// Timecode vinyl / DVS. A Phase receiver (or turntables with timecode records) plugs into an audio
+// interface's inputs; each deck reads one stereo pair. Relative mode: the record's speed and
+// direction move the music; the needle position is not used.
+// AI-written (Claude). End.
+bool MainComponent::openAudioInputs() {
+    auto setup = deviceManager.getAudioDeviceSetup();
+    juce::String inputName = setup.outputDeviceName;
+    if (auto* type = deviceManager.getCurrentDeviceTypeObject()) {
+        const auto inputs = type->getDeviceNames(true);
+        if (!inputs.contains(inputName)) inputName = inputs[type->getDefaultDeviceIndex(true)];
+    }
+    setup.inputDeviceName = inputName;
+    setup.useDefaultInputChannels = false;
+    setup.inputChannels.clear();
+    if (mixer.micState().enabled) setup.inputChannels.setRange(0, 2, true);
+    for (const int first : timecodeInputs) {
+        if (first >= 0) setup.inputChannels.setRange(first, 2, true);
+    }
+    if (setup.inputChannels.isZero()) setup.inputDeviceName = {};
+    const auto error = deviceManager.setAudioDeviceSetup(setup, true);
+    if (error.isNotEmpty()) {
+        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon, "Timecode inputs", error);
+        return false;
+    }
+    if (auto* device = deviceManager.getCurrentAudioDevice()) {
+        const auto active = device->getActiveInputChannels();
+        for (std::size_t d = 0; d < timecodeInputs.size(); ++d) {
+            const int first = timecodeInputs[d];
+            if (first >= 0 && (!active[first] || !active[first + 1])) {
+                showToast("DECK " + juce::String(static_cast<int>(d) + 1) + ": " + setup.inputDeviceName +
+                        " has no inputs " + juce::String(first + 1) + "-" + juce::String(first + 2));
+            }
+        }
+    }
+    return true;
+}
+
+void MainComponent::setTimecodeInput(int deck, int firstChannel, bool save) {
+    if (deck < 0 || deck >= 4) return;
+    const auto index = static_cast<std::size_t>(deck);
+    timecodeInputs[index] = firstChannel;
+    timecodeSignalShown[index] = false;
+    auto* type = firstChannel >= 0 ? TimecodeInput::definition(timecodeType) : nullptr;
+    if (firstChannel >= 0 && type == nullptr) {
+        timecodeInputs[index] = -1;
+        showToast("TIMECODE: could not set up " + timecodeType);
+        return;
+    }
+    openAudioInputs();
+    // The record now moves the music, so the deck should not also be held by sync or key lock rules.
+    mixer.setTimecode(index, firstChannel >= 0, std::max(0, firstChannel), type);
+    if (firstChannel >= 0) {
+        showToast("DECK " + juce::String(deck + 1) + ": TIMECODE ON INPUTS " + juce::String(firstChannel + 1) + "-" +
+                juce::String(firstChannel + 2));
+    } else {
+        showToast("DECK " + juce::String(deck + 1) + ": TIMECODE OFF");
+    }
+    if (save) {
+        juce::Array<juce::var> list;
+        for (const int c : timecodeInputs) list.add(c);
+        saveSetting("timecodeInputs", list);
+    }
+}
+
+void MainComponent::setTimecodeType(const juce::String& type) {
+    timecodeType = type;
+    saveSetting("timecodeType", type);
+    for (int d = 0; d < 4; ++d) {
+        if (timecodeInputs[static_cast<std::size_t>(d)] >= 0) setTimecodeInput(d, timecodeInputs[static_cast<std::size_t>(d)], false);
+    }
+}
+
+void MainComponent::restoreTimecode() {
+    const auto saved = juce::JSON::parse(settingsFile());
+    timecodeType = saved.getProperty("timecodeType", "serato_2a").toString();
+    if (const auto* list = saved.getProperty("timecodeInputs", {}).getArray()) {
+        for (int d = 0; d < 4 && d < list->size(); ++d) {
+            const int first = static_cast<int>((*list)[d]);
+            if (first >= 0) setTimecodeInput(d, first, false);
+        }
+    }
+}
+
+juce::PopupMenu MainComponent::timecodeMenu() {
+    juce::PopupMenu menu;
+    menu.addSectionHeader("Set Phase (MWM Connect) to Serato or Traktor, then pick the same here");
+    juce::PopupMenu types;
+    for (const auto& type : TimecodeInput::types()) {
+        const juce::String id(type.id);
+        types.addItem(type.label, true, id == timecodeType, [this, id] { setTimecodeType(id); });
+    }
+    juce::String current = timecodeType;
+    for (const auto& type : TimecodeInput::types()) if (timecodeType == type.id) current = type.label;
+    menu.addSubMenu("Timecode type: " + current, types);
+    menu.addSeparator();
+    int inputCount = 0;
+    if (auto* device = deviceManager.getCurrentAudioDevice()) inputCount = device->getInputChannelNames().size();
+    for (int d = 0; d < 4; ++d) {
+        const auto index = static_cast<std::size_t>(d);
+        const auto state = mixer.timecodeState(index);
+        juce::String status = "off";
+        if (timecodeInputs[index] >= 0) {
+            status = "inputs " + juce::String(timecodeInputs[index] + 1) + "-" + juce::String(timecodeInputs[index] + 2) +
+                    (state.signal ? ", signal OK, speed " + juce::String(state.speed, 2) : ", no signal");
+        }
+        juce::PopupMenu deck;
+        deck.addItem("Off", true, timecodeInputs[index] < 0, [this, d] { setTimecodeInput(d, -1, true); });
+        const int pairs = std::max(4, (inputCount + 1) / 2);
+        for (int p = 0; p < pairs; ++p) {
+            const int first = p * 2;
+            deck.addItem("Inputs " + juce::String(first + 1) + "-" + juce::String(first + 2), true,
+                    timecodeInputs[index] == first, [this, d, first] { setTimecodeInput(d, first, true); });
+        }
+        menu.addSubMenu("Deck " + juce::String(d + 1) + ": " + status, deck);
+    }
+    return menu;
 }
 
 }

@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 
 #include "audio/FourDeckMixer.h"
+#include "control/MixxxController.h"
 #include "control/T7Midi.h"
 #include "CrateViews.h"
 
@@ -221,6 +222,28 @@ class MainComponent final : public juce::AudioAppComponent, public juce::DragAnd
     juce::ThreadPool samplerLoader{1};
     std::unique_ptr<juce::FileChooser> recordingChooser;
     juce::Component::SafePointer<juce::DialogWindow> audioSettingsWindow;
+
+    // Other controllers, driven by the same Mixxx mappings the original Spin Deck used.
+    std::unique_ptr<mixxx::ControlSurface> controlSurface;
+    std::vector<std::unique_ptr<mixxx::MixxxController>> controllers;
+    int controllerScanTicks = 0;
+    juce::StringArray lastMidiDevices, controllerFailures;
+    void setUpControllers();
+    void refreshControllers();
+    juce::var controllerChoices() const;
+    void chooseControllerMapping(const juce::String& device, const juce::String& mappingPath);
+    juce::PopupMenu controllersMenu();
+    void startController(const juce::String& device, const juce::File& mappingFile);
+
+    // Timecode vinyl / DVS (for example an MWM Phase): which input pair drives each deck.
+    juce::String timecodeType{"serato_2a"};
+    std::array<int, 4> timecodeInputs{-1, -1, -1, -1}; // first input channel, or -1 for off
+    std::array<bool, 4> timecodeSignalShown{};
+    juce::PopupMenu timecodeMenu();
+    void setTimecodeInput(int deck, int firstChannel, bool save);
+    void setTimecodeType(const juce::String& type);
+    bool openAudioInputs();
+    void restoreTimecode();
 };
 
 }

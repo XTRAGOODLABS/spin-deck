@@ -1,6 +1,7 @@
 #pragma once
 
 #include "audio/DeckEngine.h"
+#include "audio/TimecodeInput.h"
 #include <juce_audio_basics/juce_audio_basics.h>
 
 #include <array>
@@ -22,6 +23,14 @@ class FourDeckMixer final : public juce::AudioSource {
     void setT7Connected(bool connected);
     void enqueueT7Midi(int status, int first, int second, double timestamp);
     T7MotorState t7MotorState(std::size_t index) const;
+    // Scratch from a controller mapping or timecode vinyl: rate 1 is normal speed, 0 is held still.
+    void setExternalScratch(std::size_t deck, bool active, double rate);
+    bool isExternalScratchActive(std::size_t deck) const;
+
+    // Timecode vinyl / Phase: the record on input channels firstInputChannel and the next one drives the deck.
+    struct TimecodeState { bool enabled = false, signal = false; double speed = 0; int firstInputChannel = 0; };
+    void setTimecode(std::size_t deck, bool enabled, int firstInputChannel, timecode_def* type);
+    TimecodeState timecodeState(std::size_t deck) const;
 
     enum class ChannelControl { fader, filter, low, mid, high, trim };
     void setChannelControl(std::size_t deck, ChannelControl control, float position);
@@ -197,6 +206,17 @@ class FourDeckMixer final : public juce::AudioSource {
     bool t7Connected = false;
     double t7Clock = 0;
     std::array<T7Platter, 2> platters{};
+    std::array<std::atomic<bool>, 4> externalScratchOn{};
+    std::array<std::atomic<double>, 4> externalScratchRate{};
+    std::array<bool, 4> externalScratchWas{};
+    mutable std::mutex timecodeMutex;
+    std::array<std::unique_ptr<TimecodeInput>, 4> timecode{};
+    std::array<timecode_def*, 4> timecodeTypes{};
+    std::array<std::atomic<bool>, 4> timecodeOn{}, timecodeSignal{};
+    std::array<std::atomic<double>, 4> timecodeSpeed{};
+    std::array<int, 4> timecodeChannel{};
+    void readTimecode(const juce::AudioSourceChannelInfo&);
+    void applyExternalScratch();
     std::array<uint64_t, 2> platterTrackRevisions{};
     std::array<T7Packet, 2048> t7Inbox{};
     juce::AbstractFifo t7Fifo{static_cast<int>(t7Inbox.size())};

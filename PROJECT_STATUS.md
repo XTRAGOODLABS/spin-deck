@@ -150,6 +150,19 @@ The Mac tag reader (TrackTags.mm) was not compiled in this environment and needs
 
 Checked by rendering the window at 1672×941, 1400×900 (BIG LIBRARY) and 1000×730, in two-deck and four-deck modes, and by running the audio test suite. The Apple Silicon build and hands-on use still need to be confirmed on the Mac.
 
+## Other controllers and timecode vinyl
+
+> AI-written (Claude) section. Review before relying on it.
+
+- Settings → Controllers lists every plugged-in MIDI device. Each one can be given any of the 145 Mixxx `.midi.xml` mappings in `res/controllers` (copied into the app bundle) or a user mapping in `~/Library/Application Support/Spin Deck JUCE/controllers` or Mixxx's own user folder. Suggested mappings are matched by name. The choice is saved and restarted whenever the device is plugged in. The T7 keeps Spin Deck's own support by default.
+- `MixxxMapping` reads the XML (controls, outputs, options, settings). `MixxxController` runs the mapping's JavaScript in JUCE's QuickJS engine with Mixxx's `engine` and `midi` objects: get/set value and parameter, connections, timers, scratching (alpha-beta filter, 1 ms steps), soft takeover, brake/spinback/soft start, sysex, `ColorMapper`, `getSetting`. `MixxxControls` maps Mixxx control names (`[ChannelN]`, `[Master]`, EQ and quick effect racks, effect units, samplers, stems, library, microphone, recording, Auto DJ) onto the mixer, using Mixxx's value/MIDI conversions.
+- Linux harness: Mixxx's own T7 mapping starts without script errors, PLAY toggles and lights, the volume fader and browse knob work. A test mapping checks plain XML rows, LED outputs, connections, the select knob and platter scratching. All 145 mappings load and run `init()`; 129 run with no script errors when every control is pressed once with dummy values. The other 16 errors come from the mappings themselves (rows pointing at functions their scripts never define) or from the dummy values.
+- HID controllers (20 mappings) are not supported yet.
+- Settings → Timecode vinyl / Phase: pick the timecode type (Serato, Traktor, Pioneer, MixVibes, algoriddim) and the input pair for each deck. Decoding uses xwax (`lib/xwax`, GPLv3), the same code Mixxx uses. Relative mode only: the record's speed and direction move the music; needle position is ignored. Harness: a synthetic Serato carrier reads back as speeds 1, 0.5, 1.08 and −1, and deck 1 moves 2.0 s in 2 s of timecode.
+- Not yet tried with real hardware: a Phase receiver, any non-T7 controller.
+
+> End of AI-written section.
+
 ## Blockers and unverified areas
 
 - An attended Apple Silicon test verified both T7 motors starting and stopping, and the listener confirmed audible left-platter scratching through the T7 stereo output. The host-side scratch onset median was 4.23 ms from the latest MIDI angle receipt to scheduled CoreAudio output. Physical-motion-to-analog latency and right-platter listening still need direct measurement. ENABLE T7 selects its master and headphone outputs. AUDIO exposes the CoreAudio device and channel selection.

@@ -55,7 +55,18 @@ add_library(spindeck_audio STATIC
     src/control/T7Platter.cpp
     src/control/T7Midi.cpp
     src/control/T7Performance.cpp
+    src/control/MixxxControls.cpp
+    src/control/MixxxMapping.cpp
+    src/control/MixxxController.cpp
+    src/audio/TimecodeInput.cpp
 )
+
+# xwax timecode decoder (GPLv3, Mark Hills), the same one Mixxx uses for vinyl control.
+set(xwax_dir "${CMAKE_CURRENT_SOURCE_DIR}/../lib/xwax")
+add_library(spindeck_xwax STATIC
+    "${xwax_dir}/timecoder.c" "${xwax_dir}/timecoder_mk2.c" "${xwax_dir}/lut.c" "${xwax_dir}/lut_mk2.c"
+    "${xwax_dir}/filters.c" "${xwax_dir}/ringbuffer.c" "${xwax_dir}/pitch_kalman.c" "${xwax_dir}/fmatrix.c")
+target_include_directories(spindeck_xwax SYSTEM PUBLIC "${xwax_dir}")
 
 target_include_directories(spindeck_audio PUBLIC src)
 set_source_files_properties(src/audio/StemFile.mm src/audio/TrackTags.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
@@ -68,11 +79,12 @@ target_compile_definitions(spindeck_audio
         JUCE_WEB_BROWSER=0
 )
 target_link_libraries(spindeck_audio
-    PRIVATE signalsmith-stretch juce::juce_dsp
+    PRIVATE signalsmith-stretch juce::juce_dsp spindeck_xwax
     PUBLIC
         juce::juce_audio_formats
         juce::juce_audio_processors
         juce::juce_audio_utils
+        juce::juce_javascript
 )
 
 juce_add_gui_app(SpinDeck
@@ -107,6 +119,11 @@ foreach(dependency IN ITEMS signalsmith-stretch signalsmith-linear)
     set_source_files_properties("${notice}" PROPERTIES MACOSX_PACKAGE_LOCATION "Resources/Licenses")
     target_sources(SpinDeck PRIVATE "${notice}")
 endforeach()
+# Mixxx controller mappings (XML and JavaScript), so other controllers work as in the original Spin Deck.
+add_custom_command(TARGET SpinDeck POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/../res/controllers"
+            "$<TARGET_BUNDLE_CONTENT_DIR:SpinDeck>/Resources/controllers"
+    VERBATIM)
 set(sqlcipher_notice "${CMAKE_CURRENT_SOURCE_DIR}/licenses/SQLCipher.txt")
 set_source_files_properties("${sqlcipher_notice}" PROPERTIES MACOSX_PACKAGE_LOCATION "Resources/Licenses")
 target_sources(SpinDeck PRIVATE "${sqlcipher_notice}")

@@ -90,6 +90,12 @@ class DeckEngine final {
     };
     Markers markers() const;
     void toggleStemMutes(uint8_t mask);
+    // For controller mappings (Mixxx-style controls).
+    double sourceSampleRate() const;
+    std::optional<std::pair<double, double>> loopSeconds() const;
+    void setMainCueAtPlayhead();
+    void gotoMainCue(bool andPlay, bool andStop);
+    std::optional<double> beatPhase() const; // 0..1 through the current beat, when there is a grid.
 
   private:
     friend class FourDeckMixer;

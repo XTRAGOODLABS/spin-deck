@@ -244,6 +244,85 @@ void FourDeckMixer::enqueueT7Midi(int status, int first, int second, double time
     t7Inbox[static_cast<std::size_t>(reservation.startIndex1)] = message;
 }
 
+void FourDeckMixer::setExternalScratch(std::size_t deck, bool active, double rate) {
+    if (deck >= externalScratchOn.size()) {
+        return;
+    }
+    externalScratchRate[deck].store(std::isfinite(rate) ? std::clamp(rate, -40.0, 40.0) : 0.0);
+    externalScratchOn[deck].store(active);
+}
+
+bool FourDeckMixer::isExternalScratchActive(std::size_t deck) const {
+    return deck < externalScratchOn.size() && externalScratchOn[deck].load();
+}
+
+void FourDeckMixer::setTimecode(std::size_t deck, bool enabled, int firstInputChannel, timecode_def* type) {
+    if (deck >= timecode.size()) {
+        return;
+    }
+    double rate = 0;
+    {
+        const std::lock_guard lock(mutex);
+        rate = deviceRate;
+    }
+    const std::lock_guard lock(timecodeMutex);
+    timecodeOn[deck].store(false);
+    timecode[deck].reset();
+    timecodeTypes[deck] = enabled ? type : nullptr;
+    timecodeChannel[deck] = std::max(0, firstInputChannel);
+    timecodeSignal[deck].store(false);
+    timecodeSpeed[deck].store(0);
+    if (enabled && type != nullptr) {
+        timecode[deck] = std::make_unique<TimecodeInput>();
+        timecode[deck]->prepare(type, rate > 0 ? rate : 44100.0);
+        timecodeOn[deck].store(true);
+    }
+}
+
+FourDeckMixer::TimecodeState FourDeckMixer::timecodeState(std::size_t deck) const {
+    if (deck >= timecode.size()) {
+        return {};
+    }
+    const std::lock_guard lock(timecodeMutex);
+    return {timecodeOn[deck].load(), timecodeSignal[deck].load(), timecodeSpeed[deck].load(), timecodeChannel[deck]};
+}
+
+void FourDeckMixer::readTimecode(const juce::AudioSourceChannelInfo& info) {
+    const std::unique_lock lock(timecodeMutex, std::try_to_lock);
+    if (!lock.owns_lock()) {
+        return; // Settings are changing; pick up again next block.
+    }
+    for (std::size_t d = 0; d < timecode.size(); ++d) {
+        if (!timecodeOn[d].load() || !timecode[d]) {
+            continue;
+        }
+        const int first = timecodeChannel[d];
+        if (first + 1 >= info.buffer->getNumChannels()) {
+            timecodeSignal[d].store(false);
+            continue;
+        }
+        timecode[d]->process(info.buffer->getReadPointer(first, info.startSample),
+                info.buffer->getReadPointer(first + 1, info.startSample), info.numSamples);
+        timecodeSignal[d].store(timecode[d]->hasSignal());
+        timecodeSpeed[d].store(timecode[d]->speed());
+    }
+}
+
+void FourDeckMixer::applyExternalScratch() {
+    for (std::size_t i = 0; i < decks.size() && i < externalScratchOn.size(); ++i) {
+        const bool tc = timecodeOn[i].load();
+        const bool on = tc || externalScratchOn[i].load();
+        if (tc) {
+            decks[i]->setScratch({true, timecodeSignal[i].load() ? timecodeSpeed[i].load() : 0.0});
+        } else if (on) {
+            decks[i]->setScratch({true, externalScratchRate[i].load()});
+        } else if (externalScratchWas[i] && !(t7Connected && i < platters.size())) {
+            decks[i]->setScratch({});
+        }
+        externalScratchWas[i] = on;
+    }
+}
+
 void FourDeckMixer::handleT7Block(int frames) {
     if (!t7Connected) {
         return;
@@ -729,6 +808,12 @@ void FourDeckMixer::mixDeck(std::size_t index, const juce::AudioSourceChannelInf
 }
 
 void FourDeckMixer::prepareToPlay(int, double sampleRate) {
+    {
+        const std::lock_guard timecodeLock(timecodeMutex);
+        for (std::size_t d = 0; d < timecode.size(); ++d) {
+            if (timecode[d]) timecode[d]->prepare(timecodeTypes[d], sampleRate);
+        }
+    }
     const std::lock_guard lock(mutex);
     deviceRate = sampleRate;
     firstMixBlock = true;
@@ -772,12 +857,14 @@ void FourDeckMixer::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
             micBuffer.copyFrom(channel, 0, *bufferToFill.buffer, source, bufferToFill.startSample, micFrames);
         }
     }
+    readTimecode(bufferToFill);
     bufferToFill.clearActiveBufferRegion();
     const std::lock_guard lock(mutex);
     if (deviceRate <= 0 || bufferToFill.buffer->getNumChannels() == 0) {
         return;
     }
     handleT7Block(bufferToFill.numSamples);
+    applyExternalScratch();
 
     const auto& clock = *decks[leader];
     const bool clockRunning = clock.playing && clock.grid.has_value();

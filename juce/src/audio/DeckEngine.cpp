@@ -324,6 +324,53 @@ void DeckEngine::transportCue(bool held, bool stopAtCue) {
     }
 }
 
+double DeckEngine::sourceSampleRate() const {
+    const std::lock_guard lock(mutex);
+    return sourceRate;
+}
+
+std::optional<std::pair<double, double>> DeckEngine::loopSeconds() const {
+    const std::lock_guard lock(mutex);
+    if (!loop || sourceRate <= 0) {
+        return std::nullopt;
+    }
+    return std::pair{loop->start / sourceRate, loop->end / sourceRate};
+}
+
+void DeckEngine::setMainCueAtPlayhead() {
+    const std::lock_guard edits(trackEditMutex);
+    std::unique_lock lock(mutex);
+    if (pcm.getNumSamples() == 0 || sourceRate <= 0) {
+        return;
+    }
+    cueFrame = transportFrame();
+    const double seconds = cueFrame / sourceRate;
+    const auto track = loadedTrack;
+    lock.unlock();
+    recordSaveResult(track, metadataStore.edit(track, [seconds](TrackMetadata& data) { data.mainCue = seconds; }));
+}
+
+void DeckEngine::gotoMainCue(bool andPlay, bool andStop) {
+    const std::lock_guard lock(mutex);
+    hotCuePreview.reset();
+    previewingCue = false;
+    seekToFrame(cueFrame);
+    if (andPlay) {
+        setPlaying(true);
+    } else if (andStop) {
+        setPlaying(false);
+    }
+}
+
+std::optional<double> DeckEngine::beatPhase() const {
+    const std::lock_guard lock(mutex);
+    if (!grid || sourceRate <= 0 || pcm.getNumSamples() == 0) {
+        return std::nullopt;
+    }
+    const double beat = beatPosition();
+    return beat - std::floor(beat);
+}
+
 void DeckEngine::restartFromCue() {
     const std::lock_guard lock(mutex);
     hotCuePreview.reset();
