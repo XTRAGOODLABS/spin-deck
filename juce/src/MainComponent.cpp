@@ -1,6 +1,8 @@
 #include "MainComponent.h"
 #include "StemQueueWindow.h"
 #include "audio/TrackTags.h"
+#include "audio/StemMaker.h"
+#include "audio/StemFile.h"
 
 namespace spindeck {
 
@@ -675,6 +677,12 @@ void DeckPanel::loadFile(const juce::File& file, std::optional<DeckEngine::MixPo
             auto name = file.getFileNameWithoutExtension();
             if (name.endsWithIgnoreCase(".stem")) {
                 name = name.dropLastCharacters(5);
+            }
+            // Say so when a song has a stem file that couldn't be used, instead of quietly playing the original.
+            const auto stemFile = isStemFile(file) ? file : StemMaker::associatedOutputFor(file);
+            if (stemFile.existsAsFile() && !safe->engine.mutedStems()) {
+                safe->loadNotice = "Stems couldn't be loaded. Playing the original.";
+                safe->loadNoticeTicks = 75;
             }
             const auto [songTitle, songArtist] = crate::titleAndArtist(file);
             safe->artwork = {};
