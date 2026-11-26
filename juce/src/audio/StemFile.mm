@@ -26,7 +26,7 @@ bool readStemFile(const juce::File& file, StemFile& decoded, double mixExcerptSe
         const bool excerpt = mixExcerptSeconds > 0;
         const double duration = excerpt ? std::min(fullDuration, mixExcerptSeconds) : fullDuration;
         constexpr int rate = stemDecodeRate;
-        constexpr int maxFrames = maxStemDecodeFrames;
+        const int maxFrames = maxStemDecodeFrames();
         if (!CMTIMERANGE_IS_VALID(mixRange) || !std::isfinite(duration) ||
                 duration <= 0 || duration * rate > maxFrames) {
             return false;

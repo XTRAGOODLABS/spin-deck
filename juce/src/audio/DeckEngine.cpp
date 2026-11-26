@@ -46,9 +46,7 @@ bool DeckEngine::load(const juce::File& file, Overview* overview) {
         juce::AudioFormatManager formats;
         formats.registerBasicFormats();
         auto reader = std::unique_ptr<juce::AudioFormatReader>(formats.createReaderFor(file));
-        constexpr auto maxFrames = 512 * 1024 * 1024 / (2 * sizeof(float));
-        if (!reader || reader->lengthInSamples <= 0 ||
-                reader->lengthInSamples > static_cast<juce::int64>(maxFrames) ||
+        if (!reader || reader->lengthInSamples <= 0 || reader->lengthInSamples > maxDeckFrames() ||
                 !std::isfinite(reader->sampleRate) || reader->sampleRate <= 0) {
             return false;
         }

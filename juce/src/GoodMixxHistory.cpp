@@ -114,7 +114,7 @@ LibraryIndex readProductionTracks(const juce::File& database) {
         const juce::File file(path);
         const auto title = text(1);
         const auto withinLimit = !isStemFile(file) ||
-                sqlite3_column_double(rows.get(), 3) * stemDecodeRate <= maxStemDecodeFrames;
+                sqlite3_column_double(rows.get(), 3) * stemDecodeRate <= maxStemDecodeFrames();
         index[normalize(title.isEmpty() ? fileTitle(file) : title)].push_back(
                 {normalize(text(0)), file, withinLimit});
     }
