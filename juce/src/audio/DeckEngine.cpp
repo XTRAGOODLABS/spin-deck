@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "audio/DeckEngine.h"
 #include "audio/StemFile.h"
 #include "audio/StemMaker.h"
@@ -103,6 +104,7 @@ bool DeckEngine::load(const juce::File& file, Overview* overview) {
         std::swap(pcm, decoded);
         std::swap(stemPcm, stems.parts);
         stemMutes = 0;
+        stemGain = {1, 1, 1, 1};
         sourceRate = rate;
         loadedTrack = file;
         saveFailed = !saved;
@@ -193,28 +195,58 @@ void DeckEngine::toggleStemMutes(uint8_t mask) {
 }
 
 float DeckEngine::ChannelSamples::at(int position) const {
-    if (count == 1) {
+    if (count == 1 && unity) {
         return sources[0][position];
     }
     float sum = 0;
-    for (std::size_t i = 0; i < count; ++i) {
-        sum += sources[i][position];
+    if (unity) {
+        for (std::size_t i = 0; i < count; ++i) {
+            sum += sources[i][position];
+        }
+    } else {
+        for (std::size_t i = 0; i < count; ++i) {
+            sum += gains[i] * sources[i][position];
+        }
     }
     return sum;
 }
 
+bool DeckEngine::usesStemSum() const {
+    return stemMutes != 0 || std::any_of(stemGain.begin(), stemGain.end(), [](float g) { return g != 1.0f; });
+}
+
 DeckEngine::ChannelSamples DeckEngine::channelSamples(int channel) const {
     ChannelSamples samples;
-    if (stemMutes == 0) {
+    if (stemPcm.front().getNumSamples() == 0 || !usesStemSum()) {
         samples.sources[samples.count++] = pcm.getReadPointer(channel);
     } else {
         for (std::size_t i = 0; i < stemPcm.size(); ++i) {
-            if ((stemMutes & (1u << i)) == 0) {
+            if ((stemMutes & (1u << i)) == 0 && stemGain[i] > 0.0f) {
+                samples.gains[samples.count] = stemGain[i];
+                samples.unity = samples.unity && stemGain[i] == 1.0f;
                 samples.sources[samples.count++] = stemPcm[i].getReadPointer(channel);
             }
         }
+        if (samples.count == 0) {
+            // Everything turned down: read silence from a muted stem so the reader still has a source.
+            samples.gains[0] = 0.0f;
+            samples.unity = false;
+            samples.sources[samples.count++] = stemPcm[0].getReadPointer(channel);
+        }
     }
     return samples;
+}
+
+void DeckEngine::setStemGain(std::size_t stem, float value) {
+    const std::lock_guard lock(mutex);
+    if (stem < stemGain.size()) {
+        stemGain[stem] = juce::jlimit(0.0f, 1.0f, value);
+    }
+}
+
+std::array<float, 4> DeckEngine::stemGains() const {
+    const std::lock_guard lock(mutex);
+    return stemGain;
 }
 
 void DeckEngine::play() {

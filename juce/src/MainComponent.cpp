@@ -260,6 +260,18 @@ DeckPanel::DeckPanel(std::size_t panelIndex, FourDeckMixer& deckMixer)
         button.getProperties().set("fontSize", 13.0f);
         button.onClick = [this, i] { engine.toggleStemMutes(static_cast<uint8_t>(1u << i)); };
         addAndMakeVisible(button);
+        auto& volume = stemVolumes[i];
+        volume.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        volume.setRotaryParameters(juce::MathConstants<float>::pi * 1.25f, juce::MathConstants<float>::pi * 2.75f, true);
+        volume.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        volume.setRange(0, 1, 0.01);
+        volume.setValue(1, juce::dontSendNotification);
+        volume.setDoubleClickReturnValue(true, 1);
+        volume.setColour(juce::Slider::rotarySliderFillColourId, crate::green);
+        volume.setTitle(juce::String(labels[i]) + " volume");
+        volume.setTooltip(juce::String(labels[i]) + " volume. Double-click for full.");
+        volume.onValueChange = [this, i] { engine.setStemGain(i, static_cast<float>(stemVolumes[i].getValue())); };
+        addAndMakeVisible(volume);
     }
     for (auto* control : std::array<juce::Component*, 20>{
                  &title, &track, &load, &play, &gain, &bpm, &anchor,
@@ -563,8 +575,12 @@ void DeckPanel::resized() {
         stemLabel = {};
     }
     const int stemWidth = stems.getWidth() / static_cast<int>(stemButtons.size());
-    for (auto& stem : stemButtons) {
-        stem.setBounds(stems.removeFromLeft(stemWidth).reduced(4, 0));
+    for (std::size_t i = 0; i < stemButtons.size(); ++i) {
+        auto slot = stems.removeFromLeft(stemWidth).reduced(3, 0);
+        const int knob = juce::jmin(slot.getHeight() + 2, 28);
+        stemVolumes[i].setBounds(slot.removeFromRight(knob).withSizeKeepingCentre(knob, knob));
+        slot.removeFromRight(2);
+        stemButtons[i].setBounds(slot);
     }
     area.removeFromTop(gap);
 
@@ -704,9 +720,14 @@ void DeckPanel::timerCallback() {
         repaint();
     }
     const auto muted = engine.mutedStems();
+    const auto gains = engine.stemGains();
     for (std::size_t i = 0; i < stemButtons.size(); ++i) {
         stemButtons[i].setEnabled(muted.has_value());
         stemButtons[i].setToggleState(muted.has_value() && (*muted & (1u << i)) == 0, juce::dontSendNotification);
+        stemVolumes[i].setEnabled(muted.has_value());
+        if (!stemVolumes[i].isMouseButtonDown()) {
+            stemVolumes[i].setValue(gains[i], juce::dontSendNotification);
+        }
     }
     const bool hasSavedLoops = engine.savedLoopCount() > 0;
     if (savedLoops.isVisible() != hasSavedLoops) {

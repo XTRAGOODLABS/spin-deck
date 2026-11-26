@@ -75,6 +75,9 @@ class DeckEngine final {
     void clearHotCue(std::size_t slot);
     bool hasHotCue(std::size_t slot) const;
     std::optional<uint8_t> mutedStems() const;
+    // Per-stem volume, 0 to 1, in the order drums, bass, other, vocals. Reset to full on each load.
+    void setStemGain(std::size_t stem, float gain);
+    std::array<float, 4> stemGains() const;
     // For the screen: the playing key (after any key shift) and cue positions in seconds.
     std::optional<MusicalKey> currentKey() const;
     struct Markers {
@@ -140,9 +143,13 @@ class DeckEngine final {
 
     struct ChannelSamples {
         std::array<const float*, 4> sources{};
+        std::array<float, 4> gains{1, 1, 1, 1};
         std::size_t count = 0;
+        bool unity = true; // All gains are 1, so samples can be summed directly.
         float at(int frame) const;
     };
+    // True when playback sums the separate stems instead of using the full mix.
+    bool usesStemSum() const;
     ChannelSamples channelSamples(int channel) const;
     static float sampleAt(const ChannelSamples&, double position, int last, const std::optional<Loop>&);
 
@@ -165,6 +172,7 @@ class DeckEngine final {
     juce::AudioBuffer<float> pcm;
     std::array<juce::AudioBuffer<float>, 4> stemPcm;
     uint8_t stemMutes = 0;
+    std::array<float, 4> stemGain{1, 1, 1, 1};
     double sourceRate = 0;
     double frame = 0;
     float gain = 1;

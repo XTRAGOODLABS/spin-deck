@@ -134,6 +134,7 @@ class FourDeckMixer final : public juce::AudioSource {
         int continuityFadeRemaining = 0;
         bool wasScratching = false;
         uint8_t lastStemMutes = 0;
+        bool lastStemSum = false;
         uint64_t trackRevision = 0;
     };
     void mixDeck(std::size_t index, const juce::AudioSourceChannelInfo& output, double speed);

@@ -572,17 +572,21 @@ void FourDeckMixer::mixDeck(std::size_t index, const juce::AudioSourceChannelInf
         channel.lastDeckSamples = {};
         channel.wasScratching = false;
         channel.lastStemMutes = deck.stemMutes;
+        channel.lastStemSum = deck.usesStemSum();
         channel.echo.resetHistory();
         channel.effectRoll = channel.brakeHeld = false;
         channel.brakeRemaining = 0;
         channel.riserBass = {};
         channel.riserLevel.setCurrentAndTargetValue(0);
     }
-    if (channel.wasScratching != deck.scratch.active || channel.lastStemMutes != deck.stemMutes) {
+    // Switching between the full mix and the summed stems gets the same short blend as a mute change.
+    if (channel.wasScratching != deck.scratch.active || channel.lastStemMutes != deck.stemMutes ||
+            channel.lastStemSum != deck.usesStemSum()) {
         channel.continuityAnchor = channel.lastDeckSamples;
         channel.continuityFadeRemaining = continuityFadeLength;
         channel.wasScratching = deck.scratch.active;
         channel.lastStemMutes = deck.stemMutes;
+        channel.lastStemSum = deck.usesStemSum();
     }
     const int outputs = out.buffer->getNumChannels();
     const double bpm = deck.grid ? deck.localTempo() * speed : 120.0;
