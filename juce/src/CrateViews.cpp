@@ -1136,6 +1136,10 @@ void CrateLibrary::startTagScan() {
             batch.clear();
         };
         for (const auto& item : pending) {
+            // Decks always come first: wait while any deck is loading a song.
+            while (crate::decksLoading.load() > 0 && !cancel->load()) {
+                juce::Thread::sleep(50);
+            }
             if (cancel->load()) {
                 return;
             }
@@ -1143,8 +1147,8 @@ void CrateLibrary::startTagScan() {
             batch.push_back({item.index, item.file, item.modified, readTrackTags(item.file).value_or(TrackTags{})});
             if (batch.size() >= 100) {
                 flush();
-                juce::Thread::sleep(5); // Leave the disk and screen room for deck loading during a long first scan.
             }
+            juce::Thread::sleep(3); // A gentle pace, so the first scan of a big library stays in the background.
         }
         if (!batch.empty()) {
             flush();

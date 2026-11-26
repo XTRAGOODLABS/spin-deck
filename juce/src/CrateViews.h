@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include <atomic>
 #include "audio/FourDeckMixer.h"
 #include "CrateLibraryStore.h"
 #include "GoodMixxHistory.h"
@@ -42,6 +43,8 @@ inline std::array<juce::Colour, 4> decks{juce::Colour(0xff76dba0), juce::Colour(
 inline std::array<juce::Colour, 5> wave{juce::Colour(0xffff2d1c), juce::Colour(0xffff7a14),
         juce::Colour(0xfff5d31c), juce::Colour(0xff4fe04a), juce::Colour(0xff36c9e8)};
 inline juce::String fontName;                   // Empty means the system font.
+// Decks currently loading. Background song-detail reading waits while this is above zero.
+inline std::atomic<int> decksLoading{0};
 
 // Built-in themes, in menu order.
 juce::StringArray themeNames();

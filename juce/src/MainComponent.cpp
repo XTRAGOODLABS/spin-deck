@@ -284,6 +284,7 @@ DeckPanel::DeckPanel(std::size_t panelIndex, FourDeckMixer& deckMixer)
 
 DeckPanel::~DeckPanel() {
     stopTimer();
+    details.removeAllJobs(true, 2000);
     decoder.removeAllJobs(false, -1);
 }
 
@@ -615,14 +616,13 @@ void DeckPanel::loadFile(const juce::File& file, std::optional<DeckEngine::MixPo
     decoder.addJob(std::function<void()>{[safe = SafePointer<DeckPanel>(this), file, previousTitle, point,
             completion = std::move(onSuccess), deck = &engine] {
         auto wave = std::make_shared<DeckEngine::Overview>();
+        crate::decksLoading.fetch_add(1);
         const bool loaded = deck->load(file, wave.get());
-        // Song details and cover art come from the original file when a stem copy is played.
-        const auto tags = loaded ? readTrackTags(file) : std::nullopt;
-        const auto cover = loaded ? readTrackArtwork(file) : juce::Image{};
+        crate::decksLoading.fetch_sub(1);
         if (loaded && point) {
             deck->recallMixPoint(*point);
         }
-        juce::MessageManager::callAsync([safe, file, previousTitle, wave, loaded, completion, tags, cover] {
+        juce::MessageManager::callAsync([safe, file, previousTitle, wave, loaded, completion] {
             if (!safe) {
                 return;
             }
@@ -643,23 +643,10 @@ void DeckPanel::loadFile(const juce::File& file, std::optional<DeckEngine::MixPo
             if (name.endsWithIgnoreCase(".stem")) {
                 name = name.dropLastCharacters(5);
             }
-            auto [songTitle, songArtist] = crate::titleAndArtist(file);
-            if (tags && tags->title.isNotEmpty()) {
-                songTitle = tags->title;
-                if (tags->artist.isNotEmpty()) {
-                    songArtist = tags->artist;
-                }
-            }
-            safe->artwork = cover;
-            safe->track.setText(songTitle, juce::dontSendNotification);
-            safe->artist.setText(songArtist, juce::dontSendNotification);
-            juce::String initials;
-            for (const auto& word : juce::StringArray::fromTokens(songArtist.isEmpty() ? songTitle : songArtist, " ", "")) {
-                if (word.isNotEmpty() && initials.length() < 2 && juce::CharacterFunctions::isLetterOrDigit(word[0])) {
-                    initials << juce::String::charToString(word[0]).toUpperCase();
-                }
-            }
-            safe->artistInitials = initials;
+            const auto [songTitle, songArtist] = crate::titleAndArtist(file);
+            safe->artwork = {};
+            safe->showSongDetails(songTitle, songArtist);
+            safe->fetchSongDetails(file);
             juce::ignoreUnused(name);
             safe->timerCallback();
             if (safe->onTrackLoaded) {
@@ -668,6 +655,37 @@ void DeckPanel::loadFile(const juce::File& file, std::optional<DeckEngine::MixPo
             if (completion) {
                 completion();
             }
+        });
+    }});
+}
+
+void DeckPanel::showSongDetails(const juce::String& songTitle, const juce::String& songArtist) {
+    track.setText(songTitle, juce::dontSendNotification);
+    artist.setText(songArtist, juce::dontSendNotification);
+    juce::String initials;
+    for (const auto& word : juce::StringArray::fromTokens(songArtist.isEmpty() ? songTitle : songArtist, " ", "")) {
+        if (word.isNotEmpty() && initials.length() < 2 && juce::CharacterFunctions::isLetterOrDigit(word[0])) {
+            initials << juce::String::charToString(word[0]).toUpperCase();
+        }
+    }
+    artistInitials = initials;
+    repaint();
+}
+
+// Tags and cover art are read after the song is already playable, so they can never hold up a load.
+void DeckPanel::fetchSongDetails(const juce::File& file) {
+    details.addJob(std::function<void()>{[safe = SafePointer<DeckPanel>(this), file] {
+        const auto tags = readTrackTags(file);
+        const auto cover = readTrackArtwork(file);
+        juce::MessageManager::callAsync([safe, file, tags, cover] {
+            if (!safe || safe->mixer.trackContext().decks[safe->deckIndex].file != file) {
+                return; // Another song was loaded meanwhile.
+            }
+            safe->artwork = cover;
+            if (tags && tags->title.isNotEmpty()) {
+                safe->showSongDetails(tags->title, tags->artist.isNotEmpty() ? tags->artist : safe->artist.getText());
+            }
+            safe->repaint();
         });
     }});
 }

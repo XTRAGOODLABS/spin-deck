@@ -90,6 +90,9 @@ class DeckPanel final : public juce::Component, public juce::DragAndDropTarget,
     std::array<juce::TextButton, 8> cues;
     std::array<juce::TextButton, 4> stemButtons;
     juce::ThreadPool decoder{1};
+    juce::ThreadPool details{1};
+    void showSongDetails(const juce::String& title, const juce::String& artist);
+    void fetchSongDetails(const juce::File&);
     std::unique_ptr<juce::FileChooser> chooser;
 };
 
