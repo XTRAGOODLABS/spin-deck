@@ -1,4 +1,5 @@
 #include "audio/TrackTags.h"
+#include "audio/StemFile.h"
 
 #import <AVFoundation/AVFoundation.h>
 
@@ -94,7 +95,38 @@ std::optional<TrackTags> readTrackTags(const juce::File& file) {
     }
 }
 
+namespace {
+juce::Image embeddedArtwork(const juce::File& file);
+
+// Stem copies made by Make Stems carry the song's tags but not its cover, so look for the original
+// song beside it ("Song.stem.mp4" next to "Song.mp3", "Song.m4a" and so on).
+juce::File originalForStem(const juce::File& stem) {
+    if (!isStemFile(stem)) {
+        return {};
+    }
+    const auto base = stem.getFileNameWithoutExtension().upToLastOccurrenceOf(".stem", false, true);
+    for (const auto* extension : {".mp3", ".m4a", ".aiff", ".aif", ".flac", ".wav", ".mp4", ".alac", ".aac"}) {
+        const auto candidate = stem.getSiblingFile(base + extension);
+        if (candidate.existsAsFile()) {
+            return candidate;
+        }
+    }
+    return {};
+}
+}
+
 juce::Image readTrackArtwork(const juce::File& file) {
+    auto image = embeddedArtwork(file);
+    if (!image.isValid()) {
+        if (const auto original = originalForStem(file); original != juce::File{}) {
+            image = embeddedArtwork(original);
+        }
+    }
+    return image;
+}
+
+namespace {
+juce::Image embeddedArtwork(const juce::File& file) {
     @autoreleasepool {
         if (!file.existsAsFile()) {
             return {};
@@ -129,6 +161,8 @@ juce::Image readTrackArtwork(const juce::File& file) {
         }
         return {};
     }
+}
+
 }
 
 }
