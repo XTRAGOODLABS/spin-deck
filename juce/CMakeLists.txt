@@ -50,6 +50,7 @@ add_library(spindeck_audio STATIC
     src/audio/PluginHostService.cpp
     src/audio/TrackMetadata.cpp
     src/audio/StemFile.mm
+    src/audio/TrackTags.mm
     src/audio/StemMaker.cpp
     src/control/T7Platter.cpp
     src/control/T7Midi.cpp
@@ -57,7 +58,7 @@ add_library(spindeck_audio STATIC
 )
 
 target_include_directories(spindeck_audio PUBLIC src)
-set_source_files_properties(src/audio/StemFile.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+set_source_files_properties(src/audio/StemFile.mm src/audio/TrackTags.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
 target_link_libraries(spindeck_audio PRIVATE "-framework AVFoundation" "-framework CoreMedia")
 target_compile_definitions(spindeck_audio
     PUBLIC

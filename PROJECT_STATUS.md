@@ -138,6 +138,16 @@ Loading tracks: drag a library row onto any deck, or drag audio from Finder onto
 
 Beat grid tools sit at the right end of each waveform, as in the original Spin Deck: line the grid up with the playhead, nudge it earlier or later (10 ms, SHIFT for 1 ms), grid BPM down or up (0.01, SHIFT for 0.1; constant grids only), undo the last grid change, and a lock that is saved with the track and blocks every grid edit including SET BEAT 1. Key lock is on for every deck when the app starts and stays on across loads until switched off.
 
+Song details and colour themes:
+
+- Album, Genre and Year columns, with title and artist taken from each file's own tags (read in the background on the Mac with AVFoundation, saved in the CRATE database so each file is read once). Search also matches these fields.
+- Embedded cover art on each deck.
+- A green STEMS tag on library rows that will load with stems.
+- SETTINGS opens a menu with Audio output and a Colour theme switcher: CRATE, Terminal (green on black with a monospace font) and Midnight. The choice is remembered.
+- MASTER volume in the mixer for the speaker outputs. Recording, booth and headphones stay at full level. Shortcuts for an app-linked Ulanzi Dial preset: Control-Option-Command ] up, [ down, M mute. A short on-screen note shows the level.
+
+The Mac tag reader (TrackTags.mm) was not compiled in this environment and needs the Apple Silicon build to confirm.
+
 Checked by rendering the window at 1672×941, 1400×900 (BIG LIBRARY) and 1000×730, in two-deck and four-deck modes, and by running the audio test suite. The Apple Silicon build and hands-on use still need to be confirmed on the Mac.
 
 ## Blockers and unverified areas

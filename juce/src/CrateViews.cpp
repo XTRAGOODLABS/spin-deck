@@ -1,6 +1,7 @@
 #include "CrateViews.h"
 #include "OneLibraryImport.h"
 #include "MixxxImport.h"
+#include "audio/StemFile.h"
 
 #include <cmath>
 
@@ -88,6 +89,111 @@ class MixLoadControl final : public juce::Component {
 
 }
 
+namespace {
+struct Theme {
+    const char* name;
+    std::array<uint32_t, 28> colours; // Same order as the list in applyTheme.
+    std::array<uint32_t, 4> decks;
+    std::array<uint32_t, 5> wave;
+    bool monospace;
+};
+
+const std::array<Theme, 3>& allThemes() {
+    static const std::array<Theme, 3> themes{{
+        {"CRATE",
+                {0xff0c0d0e, 0xff17191b, 0xff0f1112, 0xff2b2f32, 0xffeeeeec, 0xff989ea2, 0xff45c94a, 0xffff8a1d,
+                 0xff24282b, 0xff5a2f0c, 0xff0b0c0d, 0xff2f9a33, 0xffe2700f, 0xff070808, 0xff1b1e20, 0xff3a3f43,
+                 0xff2a4a33, 0xff121416, 0xff4aa8ff, 0xff1d2022, 0xff1f5a23, 0xff9df59d, 0xff253a4f, 0xff3b4043,
+                 0xff151719, 0xff050606, 0xffd8d8d6, 0xffff3b30},
+                {0xff76dba0, 0xffedb66c, 0xff8cb4eb, 0xffd89fcf},
+                {0xffff2d1c, 0xffff7a14, 0xfff5d31c, 0xff4fe04a, 0xff36c9e8}, false},
+        {"Terminal",
+                {0xff000000, 0xff030803, 0xff000300, 0xff0d3a14, 0xff3dff6e, 0xff1f9c42, 0xff3dff6e, 0xffb6ff4a,
+                 0xff031b09, 0xff0d2a05, 0xff001200, 0xff23c24a, 0xff7cd62a, 0xff000000, 0xff010601, 0xff0b4a1c,
+                 0xff0b3d18, 0xff010a03, 0xff9dffb6, 0xff020f05, 0xff0b4a1c, 0xff9dffb6, 0xff0b3d18, 0xff0f3d1a,
+                 0xff010a03, 0xff000000, 0xff3dff6e, 0xffe8ff4a},
+                {0xff3dff6e, 0xffb6ff4a, 0xff4affd2, 0xff8dff9e},
+                {0xff0a5a1e, 0xff12923a, 0xff2ccf58, 0xff6dff92, 0xffcfffdb}, true},
+        {"Midnight",
+                {0xff090d18, 0xff121a2b, 0xff0b111f, 0xff24314d, 0xffe6ecff, 0xff8a96b8, 0xff4fd1ff, 0xffff5fa2,
+                 0xff1b2540, 0xff4a1530, 0xff070a14, 0xff2a8fd6, 0xffe2407f, 0xff05080f, 0xff0e1526, 0xff2c3a5c,
+                 0xff1d3355, 0xff0d1424, 0xffffd166, 0xff17203a, 0xff1b3b66, 0xff9fd8ff, 0xff22365e, 0xff34436a,
+                 0xff10172a, 0xff04060c, 0xffdfe6ff, 0xffff4d6d},
+                {0xff4fd1ff, 0xffff5fa2, 0xffb18cff, 0xffffd166},
+                {0xff6a3dff, 0xff3d7bff, 0xff3dc8ff, 0xffff5fa2, 0xffffd166}, false},
+    }};
+    return themes;
+}
+
+std::array<juce::Colour*, 28> themeSlots() {
+    using namespace crate;
+    return {&background, &panel, &inset, &line, &text, &muted, &green, &amber, &control, &orangeDark, &ink,
+            &playFill, &cueFill, &waveBackground, &topBar, &tabOn, &selection, &rowAlt, &playhead, &card,
+            &starFill, &starText, &folderSelection, &knobTop, &knobBottom, &track, &thumb, &clip};
+}
+}
+
+juce::StringArray crate::themeNames() {
+    juce::StringArray names;
+    for (const auto& theme : allThemes()) {
+        names.add(theme.name);
+    }
+    return names;
+}
+
+std::vector<std::pair<juce::Colour, juce::Colour>> crate::applyTheme(int index) {
+    const auto& theme = allThemes()[static_cast<std::size_t>(juce::jlimit(0, static_cast<int>(allThemes().size()) - 1, index))];
+    std::vector<std::pair<juce::Colour, juce::Colour>> pairs;
+    const auto change = [&](juce::Colour& slot, juce::Colour next) {
+        if (slot != next) {
+            pairs.emplace_back(slot, next);
+            // Common translucent and darkened variants used by individual controls.
+            for (const float alpha : {0.6f, 0.8f}) {
+                pairs.emplace_back(slot.withAlpha(alpha), next.withAlpha(alpha));
+            }
+        }
+        slot = next;
+    };
+    const auto slots = themeSlots();
+    for (std::size_t i = 0; i < slots.size(); ++i) {
+        change(*slots[i], juce::Colour(theme.colours[i]));
+    }
+    for (std::size_t i = 0; i < decks.size(); ++i) {
+        change(decks[i], juce::Colour(theme.decks[i]));
+    }
+    for (std::size_t i = 0; i < wave.size(); ++i) {
+        wave[i] = juce::Colour(theme.wave[i]);
+    }
+#if JUCE_MAC
+    const juce::String monospace = "Menlo";
+#else
+    const juce::String monospace = "DejaVu Sans Mono";
+#endif
+    fontName = theme.monospace ? monospace : juce::String{};
+    return pairs;
+}
+
+void crate::recolour(juce::Component& component, const std::vector<std::pair<juce::Colour, juce::Colour>>& pairs) {
+    auto& properties = component.getProperties();
+    for (int i = 0; i < properties.size(); ++i) {
+        const auto name = properties.getName(i).toString();
+        if (!name.startsWith("jcclr_")) {
+            continue;
+        }
+        const auto argb = static_cast<juce::uint32>(static_cast<int>(properties.getValueAt(i)));
+        for (const auto& [from, to] : pairs) {
+            if (from.getARGB() == argb) {
+                properties.set(properties.getName(i), static_cast<int>(to.getARGB()));
+                component.colourChanged();
+                break;
+            }
+        }
+    }
+    for (auto* child : component.getChildren()) {
+        recolour(*child, pairs);
+    }
+}
+
 juce::String crate::keyName(MusicalKey key) {
     static const juce::StringArray names{"C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"};
     return names[((key.tonic % 12) + 12) % 12] + (key.major ? "" : "m");
@@ -113,11 +219,16 @@ std::pair<juce::String, juce::String> crate::titleAndArtist(const juce::File& fi
 }
 
 crate::Look::Look() {
+    applyThemeColours();
+}
+
+void crate::Look::applyThemeColours() {
+    setDefaultSansSerifTypefaceName(fontName);
     setColour(juce::ResizableWindow::backgroundColourId, background);
     setColour(juce::TextButton::buttonColourId, control);
     setColour(juce::TextButton::buttonOnColourId, green);
     setColour(juce::TextButton::textColourOffId, text);
-    setColour(juce::TextButton::textColourOnId, juce::Colour(0xff0b0c0d));
+    setColour(juce::TextButton::textColourOnId, crate::ink);
     setColour(juce::ComboBox::backgroundColourId, control);
     setColour(juce::ComboBox::outlineColourId, line);
     setColour(juce::ComboBox::textColourId, text);
@@ -130,13 +241,21 @@ crate::Look::Look() {
     setColour(juce::TextEditor::backgroundColourId, inset);
     setColour(juce::TextEditor::outlineColourId, line);
     setColour(juce::TextEditor::focusedOutlineColourId, green.withAlpha(0.6f));
-    setColour(juce::Slider::thumbColourId, juce::Colour(0xffd8d8d6));
+    setColour(juce::Slider::thumbColourId, crate::thumb);
     setColour(juce::Slider::trackColourId, green);
-    setColour(juce::Slider::backgroundColourId, juce::Colour(0xff050606));
+    setColour(juce::Slider::backgroundColourId, crate::track);
     setColour(juce::Slider::textBoxTextColourId, text);
     setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     setColour(juce::Label::textColourId, text);
-    setColour(juce::ScrollBar::thumbColourId, juce::Colour(0xff3a3f43));
+    setColour(juce::ScrollBar::thumbColourId, crate::tabOn);
+    setColour(juce::PopupMenu::textColourId, text);
+    setColour(juce::PopupMenu::highlightedBackgroundColourId, selection);
+    setColour(juce::PopupMenu::highlightedTextColourId, text);
+    setColour(juce::AlertWindow::backgroundColourId, panel);
+    setColour(juce::AlertWindow::textColourId, text);
+    setColour(juce::TooltipWindow::backgroundColourId, panel);
+    setColour(juce::TooltipWindow::textColourId, text);
+    setColour(juce::TooltipWindow::outlineColourId, line);
 }
 
 void crate::Look::drawButtonBackground(juce::Graphics& g, juce::Button& button, const juce::Colour& base,
@@ -190,8 +309,8 @@ void crate::Look::drawRotarySlider(juce::Graphics& g, int x, int y, int width, i
         g.strokePath(value, juce::PathStrokeType(2.0f));
     }
     const auto body = knob.reduced(radius * 0.22f);
-    g.setGradientFill(juce::ColourGradient(juce::Colour(0xff3b4043), body.getX(), body.getY(),
-            juce::Colour(0xff151719), body.getRight(), body.getBottom(), false));
+    g.setGradientFill(juce::ColourGradient(crate::knobTop, body.getX(), body.getY(),
+            crate::knobBottom, body.getRight(), body.getBottom(), false));
     g.fillEllipse(body);
     g.setColour(juce::Colours::black.withAlpha(0.6f));
     g.drawEllipse(body, 1.0f);
@@ -214,19 +333,19 @@ void crate::Look::drawLinearSlider(juce::Graphics& g, int x, int y, int width, i
     const auto thumb = slider.findColour(juce::Slider::thumbColourId);
     if (style == juce::Slider::LinearVertical) {
         const float cx = x + width * 0.5f;
-        g.setColour(juce::Colour(0xff050606));
+        g.setColour(crate::track);
         g.fillRoundedRectangle(cx - 2.0f, static_cast<float>(y), 4.0f, static_cast<float>(height), 2.0f);
         const float capW = juce::jmin(38.0f, width - 2.0f), capH = 14.0f;
         const auto cap = juce::Rectangle<float>(capW, capH).withCentre({cx, position});
         g.setGradientFill(juce::ColourGradient(thumb.brighter(0.2f), cap.getX(), cap.getY(),
                 thumb.darker(0.5f), cap.getX(), cap.getBottom(), false));
         g.fillRoundedRectangle(cap, 2.0f);
-        g.setColour(juce::Colour(0xff1b1d1f));
+        g.setColour(crate::knobBottom);
         g.drawHorizontalLine(juce::roundToInt(cap.getCentreY()), cap.getX() + 2, cap.getRight() - 2);
         return;
     }
     const float cy = y + height * 0.5f;
-    g.setColour(juce::Colour(0xff050606));
+    g.setColour(crate::track);
     g.fillRoundedRectangle(static_cast<float>(x), cy - 2.0f, static_cast<float>(width), 4.0f, 2.0f);
     if (slider.getProperties().getWithDefault("centreTicks", false)) {
         g.setColour(muted.withAlpha(0.6f));
@@ -301,8 +420,7 @@ void crate::Look::drawTableHeaderColumn(juce::Graphics& g, juce::TableHeaderComp
 namespace {
 // Waveform colour from how bright (treble-heavy) a slice is: bass red, mids orange to yellow, highs green to cyan.
 juce::Colour spectrumColour(float brightness, juce::Colour accent) {
-    static const std::array<juce::Colour, 5> stops{juce::Colour(0xffff2d1c), juce::Colour(0xffff7a14),
-            juce::Colour(0xfff5d31c), juce::Colour(0xff4fe04a), juce::Colour(0xff36c9e8)};
+    const auto& stops = crate::wave;
     const float t = juce::jlimit(0.0f, 0.999f, brightness) * (stops.size() - 1);
     const auto index = static_cast<std::size_t>(t);
     const auto colour = stops[index].interpolatedWith(stops[index + 1], t - static_cast<float>(index));
@@ -316,7 +434,7 @@ void crate::paintWave(juce::Graphics& g, juce::Rectangle<int> bounds, const Deck
     if (bounds.isEmpty()) {
         return;
     }
-    g.setColour(juce::Colour(0xff070808));
+    g.setColour(crate::waveBackground);
     g.fillRect(bounds);
     const auto area = bounds.reduced(0, 2);
     if (!wave || wave->seconds <= 0) {
@@ -390,7 +508,7 @@ void crate::paintWave(juce::Graphics& g, juce::Rectangle<int> bounds, const Deck
             g.setFont(juce::FontOptions(10.0f, juce::Font::bold));
             const int w = juce::jmax(11, juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), label) + 6);
             g.fillRect(juce::roundToInt(x), area.getY(), w, 13);
-            g.setColour(juce::Colour(0xff0b0c0d));
+            g.setColour(crate::ink);
             g.drawText(label, juce::roundToInt(x), area.getY(), w, 13, juce::Justification::centred);
         };
         for (std::size_t i = 0; i < markers->hotCues.size(); ++i) {
@@ -403,7 +521,7 @@ void crate::paintWave(juce::Graphics& g, juce::Rectangle<int> bounds, const Deck
         }
     }
     const float x = follow ? static_cast<float>(area.getCentreX()) : at(playhead);
-    g.setColour(juce::Colour(0xff4aa8ff));
+    g.setColour(crate::playhead);
     g.fillRect(juce::Rectangle<float>(x - 1.0f, static_cast<float>(bounds.getY()), 2.0f, static_cast<float>(bounds.getHeight())));
     if (follow) {
         juce::Path tri;
@@ -456,8 +574,8 @@ CrateMixer::CrateMixer(FourDeckMixer& source) : mixer(source) {
         stars[i].setTitle("Save GOOD MIX into " + title);
         stars[i].setTooltip("Save GOOD MIX: press the star on the deck you just mixed INTO. "
                             "Same as SHIFT + ASSIST on the T7.");
-        stars[i].setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1f5a23));
-        stars[i].setColour(juce::TextButton::textColourOffId, juce::Colour(0xff9df59d));
+        stars[i].setColour(juce::TextButton::buttonColourId, crate::starFill);
+        stars[i].setColour(juce::TextButton::textColourOffId, crate::starText);
         stars[i].onClick = [this, i] {
             if (onSaveMix) {
                 onSaveMix(i);
@@ -468,7 +586,7 @@ CrateMixer::CrateMixer(FourDeckMixer& source) : mixer(source) {
         addAndMakeVisible(cues[i]);
         addChildComponent(stars[i]);
     }
-    for (auto* slider : {&crossfade, &blend, &booth}) {
+    for (auto* slider : {&crossfade, &blend, &booth, &master}) {
         slider->setSliderStyle(juce::Slider::LinearHorizontal);
         slider->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
         addAndMakeVisible(*slider);
@@ -491,6 +609,12 @@ CrateMixer::CrateMixer(FourDeckMixer& source) : mixer(source) {
     booth.setValue(1, juce::dontSendNotification);
     booth.getProperties().set("wideThumb", true);
     booth.onValueChange = [this] { mixer.setBoothLevel(static_cast<float>(booth.getValue())); };
+    master.setTitle("Master volume");
+    master.setTooltip("Master volume for the speakers (outputs 1-2). The Ulanzi Dial can turn this.");
+    master.setRange(0, 1);
+    master.setValue(1, juce::dontSendNotification);
+    master.getProperties().set("wideThumb", true);
+    master.onValueChange = [this] { mixer.setMasterVolume(static_cast<float>(master.getValue())); };
     split.setTooltip("Split headphones: cue in the left ear, master in the right");
     split.getProperties().set("fontSize", 10.0f);
     split.onClick = [this] { mixer.toggleSplitCue(); refresh(); };
@@ -540,11 +664,18 @@ void CrateMixer::refresh() {
         blend.setValue(state.headphoneBlend, juce::dontSendNotification);
     }
     split.setToggleState(state.split, juce::dontSendNotification);
+    if (!master.isMouseButtonDown()) {
+        master.setValue(mixer.masterVolume(), juce::dontSendNotification);
+    }
     repaint();
 }
 
 void CrateMixer::resized() {
     auto area = getLocalBounds().reduced(8, 8);
+    auto masterRow = area.removeFromBottom(22);
+    masterLabel = masterRow.removeFromLeft(50);
+    master.setBounds(masterRow.reduced(2, 3));
+    area.removeFromBottom(2);
     auto monitor = area.removeFromBottom(22);
     const int third = monitor.getWidth() / 3;
     auto blendArea = monitor.removeFromLeft(third);
@@ -606,7 +737,7 @@ void CrateMixer::paint(juce::Graphics& g) {
         for (int s = 0; s < segments; ++s) {
             const int y = meter.getBottom() - 5 - s * 6;
             const float level = static_cast<float>(s + 1) / static_cast<float>(segments);
-            const auto lit = level > 0.9f ? juce::Colour(0xffff3b30) : level > 0.72f ? crate::amber : crate::green;
+            const auto lit = level > 0.9f ? crate::clip : level > 0.72f ? crate::amber : crate::green;
             g.setColour(level <= peak ? lit : lit.withAlpha(0.13f));
             g.fillRect(meter.getX(), y, meter.getWidth(), 4);
         }
@@ -615,6 +746,7 @@ void CrateMixer::paint(juce::Graphics& g) {
     g.setFont(juce::FontOptions(10.0f, juce::Font::bold));
     g.drawText("CUE", blendLabel, juce::Justification::centredLeft);
     g.drawText("BOOTH", boothLabel, juce::Justification::centredLeft);
+    g.drawText("MASTER", masterLabel, juce::Justification::centredLeft);
 }
 
 void CrateMixer::paintOverChildren(juce::Graphics& g) {
@@ -622,7 +754,7 @@ void CrateMixer::paintOverChildren(juce::Graphics& g) {
     for (std::size_t i = 0; i < static_cast<std::size_t>(count); ++i) {
         const auto b = cues[i].getBounds().toFloat().withSizeKeepingCentre(15, 14);
         const bool on = cues[i].getToggleState();
-        g.setColour(on ? juce::Colour(0xff0b0c0d) : crate::text);
+        g.setColour(on ? crate::ink : crate::text);
         juce::Path band;
         band.addCentredArc(b.getCentreX(), b.getCentreY() + 1, 6.5f, 6.5f, 0,
                 -juce::MathConstants<float>::halfPi, juce::MathConstants<float>::halfPi, true);
@@ -821,9 +953,12 @@ CrateLibrary::CrateLibrary(const juce::File& metadataDirectory)
     table.getHeader().addColumn("#", 5, 42, 30, 60, fixed);
     table.getHeader().addColumn("Title", 1, 330, 120, -1, fixed);
     table.getHeader().addColumn("Artist", 6, 230, 90, -1, fixed);
-    table.getHeader().addColumn("Key", 4, 70, 50, 120, fixed);
-    table.getHeader().addColumn("BPM", 2, 70, 50, 100, fixed);
-    table.getHeader().addColumn("Duration", 3, 82, 60, 120, fixed);
+    table.getHeader().addColumn("Album", 7, 200, 80, -1, fixed);
+    table.getHeader().addColumn("Genre", 8, 110, 60, -1, fixed);
+    table.getHeader().addColumn("Key", 4, 64, 50, 120, fixed);
+    table.getHeader().addColumn("BPM", 2, 64, 50, 100, fixed);
+    table.getHeader().addColumn("Year", 9, 56, 44, 90, fixed);
+    table.getHeader().addColumn("Duration", 3, 74, 60, 120, fixed);
     table.setTitle("CRATE tracks");
     addAndMakeVisible(table);
     for (std::size_t i = 0; i < route.size(); ++i) {
@@ -852,7 +987,16 @@ CrateLibrary::CrateLibrary(const juce::File& metadataDirectory)
                 persistTrack(track);
             }
         }
+        const auto cachedTags = libraryStore.loadTags();
+        for (auto& track : tracks) {
+            const auto found = cachedTags.find(track.file.getFullPathName());
+            if (found != cachedTags.end() && found->second.first == track.modifiedMs) {
+                track.tags = found->second.second;
+                track.tagsRead = true;
+            }
+        }
         filter();
+        startTagScan();
     } else {
         saveStatus.setText("Could not open CRATE library", juce::dontSendNotification);
     }
@@ -878,6 +1022,8 @@ CrateLibrary::CrateLibrary(const juce::File& metadataDirectory)
 }
 
 CrateLibrary::~CrateLibrary() {
+    tagScanCancel->store(true);
+    tagWorker.removeAllJobs(true, 4000);
     analysisWorker.removeAllJobs(false, -1);
     table.setModel(nullptr);
     mixList.setModel(nullptr);
@@ -928,6 +1074,85 @@ void CrateLibrary::addTrack(
     }
     filter();
     updateMixes();
+    if (!track->tagsRead) {
+        startTagScan();
+    }
+}
+
+void CrateLibrary::startTagScan() {
+    if (tagScanRunning) {
+        return;
+    }
+    std::vector<std::pair<juce::File, juce::int64>> pending;
+    for (const auto& track : tracks) {
+        if (!track.tagsRead && track.available) {
+            pending.emplace_back(track.file, track.modifiedMs);
+        }
+    }
+    if (pending.empty()) {
+        return;
+    }
+    tagScanRunning = true;
+    tagWorker.addJob(std::function<void()>{[safe = SafePointer<CrateLibrary>(this), pending, cancel = tagScanCancel] {
+        std::vector<std::tuple<juce::String, juce::int64, TrackTags>> batch;
+        const auto flush = [&] {
+            juce::MessageManager::callAsync([safe, rows = std::move(batch)] {
+                if (!safe) {
+                    return;
+                }
+                for (const auto& [path, modified, tags] : rows) {
+                    const auto track = std::find_if(safe->tracks.begin(), safe->tracks.end(), [&](const auto& item) {
+                        return item.modifiedMs == modified && item.file.getFullPathName() == path;
+                    });
+                    if (track != safe->tracks.end()) {
+                        track->tags = tags;
+                        track->tagsRead = true;
+                    }
+                }
+                safe->libraryStore.saveTags(rows);
+                safe->table.repaint();
+            });
+            batch.clear();
+        };
+        for (const auto& [file, modified] : pending) {
+            if (cancel->load()) {
+                return;
+            }
+            // A file without readable tags is still recorded, so it isn't read again.
+            batch.emplace_back(file.getFullPathName(), modified, readTrackTags(file).value_or(TrackTags{}));
+            if (batch.size() >= 40) {
+                flush();
+            }
+        }
+        if (!batch.empty()) {
+            flush();
+        }
+        juce::MessageManager::callAsync([safe] {
+            if (safe) {
+                safe->tagScanRunning = false;
+                safe->startTagScan(); // Pick up anything added while this pass ran.
+            }
+        });
+    }});
+}
+
+bool CrateLibrary::hasStems(const juce::File& file) {
+    const auto path = file.getFullPathName();
+    if (const auto found = stemMarks.find(path); found != stemMarks.end()) {
+        return found->second;
+    }
+    auto name = file.getFileNameWithoutExtension();
+    const bool stems = isStemFile(file) || file.getSiblingFile(name + ".stem.mp4").existsAsFile() ||
+            file.getSiblingFile(name + ".stem.m4a").existsAsFile();
+    stemMarks[path] = stems;
+    return stems;
+}
+
+void CrateLibrary::refreshStemMarkers() {
+    if (!stemMarks.empty()) {
+        stemMarks.clear();
+        table.repaint();
+    }
 }
 
 void CrateLibrary::persistTrack(const CrateTrack& track) {
@@ -983,7 +1208,7 @@ void CrateLibrary::MixList::paintListBoxItem(
     }
     const auto& mix = rows[static_cast<std::size_t>(row)];
     const auto card = juce::Rectangle<int>(width, height).withTrimmedBottom(6).toFloat().reduced(1.0f);
-    g.setColour(selected ? juce::Colour(0xff1f2a24) : juce::Colour(0xff1d2022));
+    g.setColour(selected ? crate::selection : crate::card);
     g.fillRoundedRectangle(card, 4.0f);
     g.setColour(row == 0 ? crate::green : crate::line);
     g.drawRoundedRectangle(card, 4.0f, row == 0 ? 2.0f : 1.0f);
@@ -1016,7 +1241,7 @@ void CrateLibrary::MixList::paintListBoxItem(
         tag = tag.removeFromRight(62);
         g.setColour(crate::green);
         g.fillRoundedRectangle(tag.toFloat(), 3.0f);
-        g.setColour(juce::Colour(0xff08110a));
+        g.setColour(crate::ink);
         g.setFont(juce::FontOptions(11.0f, juce::Font::bold));
         g.drawText("Proven", tag, juce::Justification::centred);
     }
@@ -1722,7 +1947,11 @@ void CrateLibrary::filter() {
             ? std::optional{results[static_cast<std::size_t>(selected)]} : std::nullopt;
     results.clear();
     const auto addMatch = [&](std::size_t index) {
-        if (tracks[index].file.getFileName().containsIgnoreCase(query) || query.isEmpty()) {
+        const auto& item = tracks[index];
+        const auto matches = [&](const juce::String& value) { return value.containsIgnoreCase(query); };
+        if (query.isEmpty() || matches(item.file.getFileName()) ||
+                (item.tags && (matches(item.tags->title) || matches(item.tags->artist) ||
+                        matches(item.tags->album) || matches(item.tags->genre)))) {
             results.push_back(index);
         }
     };
@@ -1886,7 +2115,7 @@ juce::String CrateLibrary::getCellTooltip(int row, int) {
 }
 
 void CrateLibrary::paintRowBackground(juce::Graphics& g, int row, int, int, bool selected) {
-    g.fillAll(selected ? juce::Colour(0xff2a4a33) : (row % 2 ? juce::Colour(0xff121416) : crate::inset));
+    g.fillAll(selected ? crate::selection : (row % 2 ? crate::rowAlt : crate::inset));
 }
 
 void CrateLibrary::paintCell(juce::Graphics& g, int row, int column, int width, int height, bool selected) {
@@ -1895,7 +2124,22 @@ void CrateLibrary::paintCell(juce::Graphics& g, int row, int column, int width, 
     }
     const auto& entry = tracks[results[static_cast<std::size_t>(row)]];
     const auto seconds = static_cast<int>(entry.seconds);
-    const auto [title, artistName] = crate::titleAndArtist(entry.file);
+    auto [title, artistName] = crate::titleAndArtist(entry.file);
+    if (entry.tags && entry.tags->title.isNotEmpty()) {
+        title = entry.tags->title;
+        artistName = entry.tags->artist.isNotEmpty() ? entry.tags->artist : artistName;
+    }
+    if (column == 1 && hasStems(entry.file)) {
+        // A small STEMS tag: this song loads with its four stems.
+        const int tagWidth = 44;
+        const auto tag = juce::Rectangle<int>(width - tagWidth - 4, 3, tagWidth, height - 6);
+        g.setColour(crate::starFill);
+        g.fillRoundedRectangle(tag.toFloat(), 3.0f);
+        g.setColour(crate::starText);
+        g.setFont(juce::FontOptions(10.0f, juce::Font::bold));
+        g.drawText("STEMS", tag, juce::Justification::centred);
+        width -= tagWidth + 6;
+    }
     const bool loaded = std::any_of(context.decks.begin(), context.decks.end(),
             [&](const auto& deck) { return deck.file != juce::File{} && sameSessionTrack(deck.file, entry.file); });
     g.setFont(juce::FontOptions(13.5f, column == 1 && loaded ? juce::Font::bold : juce::Font::plain));
@@ -1910,11 +2154,14 @@ void CrateLibrary::paintCell(juce::Graphics& g, int row, int column, int width, 
     const juce::String value = column == 5 ? juce::String(row + 1)
             : column == 1 ? title
             : column == 6 ? artistName
+            : column == 7 ? (entry.tags ? entry.tags->album : juce::String{})
+            : column == 8 ? (entry.tags ? entry.tags->genre : juce::String{})
+            : column == 9 ? (entry.tags ? entry.tags->year : juce::String{})
             : column == 2 && entry.bpm ? juce::String(*entry.bpm, 1)
             : column == 3 && seconds > 0 ? juce::String(seconds / 60) + ":" +
                     juce::String(seconds % 60).paddedLeft('0', 2) : juce::String{};
     g.setColour(!entry.available ? crate::muted.withAlpha(0.6f)
-            : (column == 1 || column == 6 || selected) ? crate::text : crate::text.withAlpha(0.85f));
+            : (column == 1 || column == 6 || selected) ? crate::text : crate::text.withAlpha(0.8f));
     g.drawText(value, 8, 0, width - 12, height, juce::Justification::centredLeft, true);
 }
 
@@ -1938,7 +2185,7 @@ void CrateLibrary::Sidebar::paintListBoxItem(int row, juce::Graphics& g, int wid
     const int selectedId = owner.playlistPicker.getSelectedId();
     const bool current = (playlist == -1 && selectedId == 1) || (playlist >= 0 && selectedId == playlist + 2);
     if (current) {
-        g.setColour(juce::Colour(0xff253a4f));
+        g.setColour(crate::folderSelection);
         g.fillRoundedRectangle(4, 1, static_cast<float>(width - 8), static_cast<float>(height - 2), 3);
     }
     if (playlist == -2) {
@@ -1947,7 +2194,7 @@ void CrateLibrary::Sidebar::paintListBoxItem(int row, juce::Graphics& g, int wid
         juce::Path arrow;
         arrow.addTriangle(8, height * 0.5f - 3, 16, height * 0.5f - 3, 12, height * 0.5f + 3);
         g.fillPath(arrow);
-        g.setColour(row == 0 ? crate::amber : juce::Colour(0xfff2a640));
+        g.setColour(row == 0 ? crate::amber : crate::amber);
         g.fillRoundedRectangle(22, height * 0.5f - 6, 14, 11, 2);
         g.setColour(crate::text);
         g.setFont(juce::FontOptions(14.5f));
@@ -2012,9 +2259,11 @@ void CrateLibrary::resized() {
 
     mixPanel = area.removeFromRight(296);
     table.setBounds(area);
-    const int flexible = juce::jmax(220, area.getWidth() - 42 - 70 - 70 - 82 - 18);
-    table.getHeader().setColumnWidth(1, flexible * 3 / 5);
-    table.getHeader().setColumnWidth(6, flexible * 2 / 5);
+    const int flexible = juce::jmax(300, area.getWidth() - 42 - 64 - 64 - 56 - 74 - 18);
+    table.getHeader().setColumnWidth(1, flexible * 33 / 100);
+    table.getHeader().setColumnWidth(6, flexible * 25 / 100);
+    table.getHeader().setColumnWidth(7, flexible * 26 / 100);
+    table.getHeader().setColumnWidth(8, flexible * 16 / 100);
 
     auto mixes = mixPanel.reduced(8, 6);
     mixHeader = mixes.removeFromTop(32);

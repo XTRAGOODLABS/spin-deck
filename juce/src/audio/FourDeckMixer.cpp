@@ -86,6 +86,16 @@ void FourDeckMixer::matchDeckKey(std::size_t index) {
     ++deck.revision;
 }
 
+void FourDeckMixer::setMasterVolume(float level) {
+    const std::lock_guard lock(mutex);
+    masterVolumeLevel = std::clamp(level, 0.0f, 1.0f);
+}
+
+float FourDeckMixer::masterVolume() const {
+    const std::lock_guard lock(mutex);
+    return masterVolumeLevel;
+}
+
 void FourDeckMixer::setBoothLevel(float level) {
     const std::lock_guard lock(mutex);
     boothLevel = std::clamp(level, 0.0f, 1.0f);
@@ -677,6 +687,7 @@ void FourDeckMixer::prepareToPlay(int, double sampleRate) {
     deviceRate = sampleRate;
     firstMixBlock = true;
     boothGain.reset(sampleRate, 0.005);
+    masterGain.reset(sampleRate, 0.02);
     headphoneBlend.reset(sampleRate, 0.001);
     splitBlend.reset(sampleRate, 0.001);
     for (auto& channel : channels) {
@@ -778,6 +789,23 @@ void FourDeckMixer::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
             const float monoMaster = 0.5f * (masterL[i] + masterR[i]);
             cueL[i] = std::lerp(std::lerp(cueL[i], masterL[i], mix), monoCue, split);
             cueR[i] = std::lerp(std::lerp(cueR[i], masterR[i], mix), monoMaster, split);
+        }
+    }
+    if (channelsOut >= 2) {
+        // Applied last so the recording, booth feed and headphone master stay at full level.
+        if (firstMixBlock) {
+            masterGain.setCurrentAndTargetValue(masterVolumeLevel);
+        } else {
+            masterGain.setTargetValue(masterVolumeLevel);
+        }
+        if (masterGain.isSmoothing() || masterGain.getTargetValue() < 1.0f) {
+            auto* left = bufferToFill.buffer->getWritePointer(0, bufferToFill.startSample);
+            auto* right = bufferToFill.buffer->getWritePointer(1, bufferToFill.startSample);
+            for (int i = 0; i < bufferToFill.numSamples; ++i) {
+                const float gain = masterGain.getNextValue();
+                left[i] *= gain;
+                right[i] *= gain;
+            }
         }
     }
     firstMixBlock = false;

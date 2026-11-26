@@ -1,6 +1,11 @@
 #pragma once
 
 #include "audio/BeatAnalysis.h"
+#include "audio/TrackTags.h"
+
+#include <map>
+#include <tuple>
+#include <vector>
 
 struct sqlite3;
 
@@ -14,6 +19,8 @@ struct CrateTrack {
     juce::int64 modifiedMs = 0;
     bool analyzed = false;
     bool available = false;
+    std::optional<TrackTags> tags; // Song details from the file, once read.
+    bool tagsRead = false;
 };
 
 struct CratePlaylist {
@@ -31,6 +38,9 @@ class CrateLibraryStore {
     bool mergeTracks(const std::vector<CrateTrack>&) const;
     std::vector<CratePlaylist> loadPlaylists() const;
     bool savePlaylist(const CratePlaylist&) const;
+    // Song details by file path, with the file's modification time when they were read.
+    std::map<juce::String, std::pair<juce::int64, TrackTags>> loadTags() const;
+    bool saveTags(const std::vector<std::tuple<juce::String, juce::int64, TrackTags>>&) const;
 
   private:
     sqlite3* db = nullptr;

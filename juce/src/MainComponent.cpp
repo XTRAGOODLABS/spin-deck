@@ -1,9 +1,15 @@
 #include "MainComponent.h"
 #include "StemQueueWindow.h"
+#include "audio/TrackTags.h"
 
 namespace spindeck {
 
 namespace {
+juce::File settingsFile() {
+    return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+            .getChildFile("Application Support/Spin Deck JUCE/Settings.json");
+}
+
 juce::File trackMetadataDirectory() {
     return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
             .getChildFile("Application Support/Spin Deck JUCE/Track Metadata");
@@ -12,8 +18,7 @@ constexpr std::array loopBeats{0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0, 32.0};
 constexpr std::array jumpBeats{1, 2, 4, 8, 16, 32};
 constexpr std::array rollBeats{1.0 / 16, 1.0 / 8, 0.25, 0.5, 1.0, 2.0, 4.0, 8.0};
 juce::Colour deckAccent(std::size_t deck) {
-    constexpr std::array<uint32_t, 4> colours{0xff76dba0, 0xffedb66c, 0xff8cb4eb, 0xffd89fcf};
-    return juce::Colour(colours[deck]);
+    return crate::decks[deck];
 }
 constexpr std::array rollLabels{"1/16", "1/8", "1/4", "1/2", "1", "2", "4", "8"};
 }
@@ -46,13 +51,13 @@ DeckPanel::DeckPanel(std::size_t panelIndex, FourDeckMixer& deckMixer)
     total.setFont(juce::FontOptions(16.0f));
     total.setColour(juce::Label::textColourId, crate::muted);
     addAndMakeVisible(artist);
-    play.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff2f9a33));
+    play.setColour(juce::TextButton::buttonColourId, crate::playFill);
     play.setColour(juce::TextButton::buttonOnColourId, crate::green);
-    play.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff08110a));
-    play.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff08110a));
+    play.setColour(juce::TextButton::textColourOffId, crate::ink);
+    play.setColour(juce::TextButton::textColourOnId, crate::ink);
     play.getProperties().set("fontSize", 17.0f);
-    cueButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xffe2700f));
-    cueButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff1a0b00));
+    cueButton.setColour(juce::TextButton::buttonColourId, crate::cueFill);
+    cueButton.setColour(juce::TextButton::textColourOffId, crate::ink);
     cueButton.getProperties().set("fontSize", 16.0f);
     cueButton.setTooltip("Hold to preview from the cue point. When stopped away from the cue, sets a new cue.");
     cueButton.onStateChange = [this] {
@@ -137,7 +142,7 @@ DeckPanel::DeckPanel(std::size_t panelIndex, FourDeckMixer& deckMixer)
     bpm.setTextValueSuffix(" BPM");
     bpm.setTitle("Beat grid tempo");
     bpm.setTooltip("Beat grid tempo. Drag or type a value, then SET BEAT 1 at the first downbeat.");
-    bpm.setColour(juce::Slider::trackColourId, juce::Colour(0xff2c3134));
+    bpm.setColour(juce::Slider::trackColourId, crate::control);
     bpm.setColour(juce::Slider::backgroundColourId, crate::inset);
 
     anchor.onClick = [this] {
@@ -232,7 +237,7 @@ DeckPanel::DeckPanel(std::size_t panelIndex, FourDeckMixer& deckMixer)
         button.setButtonText(juce::String(static_cast<int>(i + 1)));
         button.setTitle("Hot cue " + button.getButtonText());
         button.setColour(juce::TextButton::buttonOnColourId, crate::amber);
-        button.setColour(juce::TextButton::textColourOnId, juce::Colour(0xff1a0b00));
+        button.setColour(juce::TextButton::textColourOnId, crate::ink);
         button.getProperties().set("fontSize", 16.0f);
         button.setTooltip("Set or jump to hot cue. Shift-click clears it.");
         button.onClick = [this, i] {
@@ -245,11 +250,11 @@ DeckPanel::DeckPanel(std::size_t panelIndex, FourDeckMixer& deckMixer)
         addAndMakeVisible(button);
     }
     constexpr std::array labels{"Drums", "Bass", "Other", "Vocals"};
-    constexpr std::array<uint32_t, 4> stemColours{0xff2f6b3a, 0xff2f6b3a, 0xff2f6b3a, 0xff2f6b3a};
+
     for (std::size_t i = 0; i < stemButtons.size(); ++i) {
         auto& button = stemButtons[i];
         button.setButtonText(labels[i]);
-        button.setColour(juce::TextButton::buttonOnColourId, juce::Colour(stemColours[i]));
+        button.setColour(juce::TextButton::buttonOnColourId, crate::starFill);
         button.setTooltip(juce::String("Mute or unmute ") + labels[i]);
         button.setColour(juce::TextButton::textColourOnId, crate::text);
         button.getProperties().set("fontSize", 13.0f);
@@ -286,11 +291,17 @@ void DeckPanel::paint(juce::Graphics& g) {
     g.fillAll(crate::panel);
     g.setColour(crate::line);
     g.drawRect(getLocalBounds());
-    if (!artBounds.isEmpty()) {
+    if (!artBounds.isEmpty() && artwork.isValid()) {
+        juce::Graphics::ScopedSaveState state(g);
+        juce::Path rounded;
+        rounded.addRoundedRectangle(artBounds.toFloat(), 3.0f);
+        g.reduceClipRegion(rounded);
+        g.drawImage(artwork, artBounds.toFloat(), juce::RectanglePlacement::fillDestination);
+    } else if (!artBounds.isEmpty()) {
         const auto art = artBounds.toFloat();
         const auto accent = deckAccent(deckIndex);
         g.setGradientFill(juce::ColourGradient(accent.withMultipliedBrightness(0.55f), art.getX(), art.getY(),
-                juce::Colour(0xff121416), art.getRight(), art.getBottom(), false));
+                crate::rowAlt, art.getRight(), art.getBottom(), false));
         g.fillRoundedRectangle(art, 3.0f);
         g.setColour(juce::Colours::white.withAlpha(0.85f));
         g.setFont(juce::FontOptions(art.getHeight() * 0.36f, juce::Font::bold));
@@ -605,10 +616,13 @@ void DeckPanel::loadFile(const juce::File& file, std::optional<DeckEngine::MixPo
             completion = std::move(onSuccess), deck = &engine] {
         auto wave = std::make_shared<DeckEngine::Overview>();
         const bool loaded = deck->load(file, wave.get());
+        // Song details and cover art come from the original file when a stem copy is played.
+        const auto tags = loaded ? readTrackTags(file) : std::nullopt;
+        const auto cover = loaded ? readTrackArtwork(file) : juce::Image{};
         if (loaded && point) {
             deck->recallMixPoint(*point);
         }
-        juce::MessageManager::callAsync([safe, file, previousTitle, wave, loaded, completion] {
+        juce::MessageManager::callAsync([safe, file, previousTitle, wave, loaded, completion, tags, cover] {
             if (!safe) {
                 return;
             }
@@ -629,7 +643,14 @@ void DeckPanel::loadFile(const juce::File& file, std::optional<DeckEngine::MixPo
             if (name.endsWithIgnoreCase(".stem")) {
                 name = name.dropLastCharacters(5);
             }
-            const auto [songTitle, songArtist] = crate::titleAndArtist(file);
+            auto [songTitle, songArtist] = crate::titleAndArtist(file);
+            if (tags && tags->title.isNotEmpty()) {
+                songTitle = tags->title;
+                if (tags->artist.isNotEmpty()) {
+                    songArtist = tags->artist;
+                }
+            }
+            safe->artwork = cover;
             safe->track.setText(songTitle, juce::dontSendNotification);
             safe->artist.setText(songArtist, juce::dontSendNotification);
             juce::String initials;
@@ -764,11 +785,11 @@ GridIconButton::GridIconButton(Icon kind, const juce::String& tip) : juce::Butto
 void GridIconButton::paintButton(juce::Graphics& g, bool over, bool down) {
     auto bounds = getLocalBounds().toFloat().reduced(0.5f);
     const bool on = getToggleState();
-    g.setColour(on ? crate::amber.withAlpha(0.9f) : juce::Colour(0xff202426).brighter(down ? 0.25f : over ? 0.1f : 0));
+    g.setColour(on ? crate::amber.withAlpha(0.9f) : crate::control.brighter(down ? 0.25f : over ? 0.1f : 0));
     g.fillRoundedRectangle(bounds, 2.5f);
     g.setColour(juce::Colours::white.withAlpha(0.07f));
     g.drawRoundedRectangle(bounds, 2.5f, 1.0f);
-    const auto colour = !isEnabled() ? crate::muted.withAlpha(0.35f) : on ? juce::Colour(0xff1a0b00) : crate::text;
+    const auto colour = !isEnabled() ? crate::muted.withAlpha(0.35f) : on ? crate::ink : crate::text;
     g.setColour(colour);
     const auto c = bounds.getCentre();
     const float h = juce::jmin(bounds.getHeight() * 0.62f, 14.0f);
@@ -869,7 +890,7 @@ void GridTools::refresh() {
 }
 
 void GridTools::paint(juce::Graphics& g) {
-    g.fillAll(juce::Colour(0xff0f1112));
+    g.fillAll(crate::inset);
 }
 
 void GridTools::resized() {
@@ -899,7 +920,7 @@ MainComponent::MainComponent()
         : mixer(trackMetadataDirectory()), t7(mixer), mixerView(mixer), echoView(mixer),
           library(trackMetadataDirectory()) {
     crateLook.setColour(juce::ResizableWindow::backgroundColourId, crate::background);
-    crateLook.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff282e31));
+    crateLook.setColour(juce::TextButton::buttonColourId, crate::control);
     crateLook.setColour(juce::TextButton::buttonOnColourId, crate::green);
     crateLook.setColour(juce::TextButton::textColourOffId, crate::text);
     crateLook.setColour(juce::TextButton::textColourOnId, crate::inset);
@@ -918,6 +939,8 @@ MainComponent::MainComponent()
     crateLook.setColour(juce::TextEditor::backgroundColourId, crate::inset);
     crateLook.setColour(juce::TextEditor::outlineColourId, crate::line);
     setLookAndFeel(&crateLook);
+    // Also the app-wide default, so menus, dialogs and theme fonts follow the theme.
+    juce::LookAndFeel::setDefaultLookAndFeel(&crateLook);
     for (std::size_t i = 0; i < panels.size(); ++i) {
         panels[i] = std::make_unique<DeckPanel>(i, mixer);
         addAndMakeVisible(*panels[i]);
@@ -1037,7 +1060,7 @@ MainComponent::MainComponent()
         button.setToggleState(on, juce::dontSendNotification);
         button.setTooltip(tip);
         button.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-        button.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff3a3f43));
+        button.setColour(juce::TextButton::buttonOnColourId, crate::tabOn);
         button.setColour(juce::TextButton::textColourOnId, crate::text);
         button.setColour(juce::TextButton::textColourOffId, crate::muted);
         button.getProperties().set("fontSize", 11.5f);
@@ -1057,7 +1080,7 @@ MainComponent::MainComponent()
         flat->setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
         flat->getProperties().set("fontSize", 11.5f);
     }
-    record.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xffd23a2a));
+    record.setColour(juce::TextButton::buttonOnColourId, crate::clip);
     record.setColour(juce::TextButton::textColourOnId, crate::text);
     t7Button.setColour(juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
     t7Button.setColour(juce::TextButton::textColourOnId, crate::text);
@@ -1116,7 +1139,13 @@ MainComponent::MainComponent()
         }
     };
     audioSettings.setTooltip("Select the audio output, sample rate, and buffer size.");
-    audioSettings.onClick = [this] { showAudioSettings(); };
+    audioSettings.onClick = [this] { showSettingsMenu(); };
+    audioSettings.setTooltip("Audio output and colour theme");
+    toast.setJustificationType(juce::Justification::centred);
+    toast.setFont(juce::FontOptions(13.0f, juce::Font::bold));
+    toast.setInterceptsMouseClicks(false, false);
+    addChildComponent(toast);
+    setWantsKeyboardFocus(true);
     addAndMakeVisible(t7Button);
     addAndMakeVisible(audioSettings);
     makeStemsButton.setTooltip("Open the local Demucs stem queue.");
@@ -1182,6 +1211,13 @@ MainComponent::MainComponent()
 
     setSize(1500, 900);
     stemQueue = std::make_unique<StemQueueWindow>(this);
+    {
+        const auto saved = juce::JSON::parse(settingsFile());
+        const auto theme = crate::themeNames().indexOf(saved.getProperty("theme", "CRATE").toString());
+        if (theme > 0) {
+            setTheme(theme, false);
+        }
+    }
     setAudioChannels(0, 2);
     startTimerHz(24);
 }
@@ -1194,6 +1230,7 @@ MainComponent::~MainComponent() {
     delete audioSettingsWindow.getComponent();
     shutdownAudio();
     setLookAndFeel(nullptr);
+    juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
 }
 
 void MainComponent::timerCallback() {
@@ -1202,6 +1239,9 @@ void MainComponent::timerCallback() {
         mixer.stopRecording();
         juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
                 "Recording stopped", "The disk writer fell behind. The WAV contains audio up to that point.");
+    }
+    if (toastTicks > 0 && --toastTicks == 0) {
+        toast.setVisible(false);
     }
     const bool recording = mixer.isRecording();
     record.setToggleState(recording, juce::dontSendNotification);
@@ -1220,6 +1260,10 @@ void MainComponent::timerCallback() {
             if (tools->isVisible()) {
                 tools->refresh();
             }
+        }
+        if (++stemMarkerTicks >= 20) {
+            stemMarkerTicks = 0;
+            library.refreshStemMarkers();
         }
         const auto note = stemQueue ? stemQueue->progressNote() : juce::String{};
         if (note != stemNote.getText()) {
@@ -1278,6 +1322,91 @@ void MainComponent::rememberT7AudioTiming() {
     }
 }
 
+void MainComponent::showSettingsMenu() {
+    juce::PopupMenu menu;
+    menu.addItem("Audio output...", [this] { showAudioSettings(); });
+    juce::PopupMenu themes;
+    const auto names = crate::themeNames();
+    for (int i = 0; i < names.size(); ++i) {
+        themes.addItem(names[i], true, i == themeIndex, [this, i] { setTheme(i, true); });
+    }
+    menu.addSubMenu("Colour theme", themes);
+    menu.addSeparator();
+    menu.addItem(juce::String::fromUTF8("Master volume up   \xE2\x8C\x83\xE2\x8C\xA5\xE2\x8C\x98]"), [this] { changeMasterVolume(0.02f); });
+    menu.addItem(juce::String::fromUTF8("Master volume down   \xE2\x8C\x83\xE2\x8C\xA5\xE2\x8C\x98["), [this] { changeMasterVolume(-0.02f); });
+    menu.addItem(juce::String::fromUTF8("Mute / unmute master   \xE2\x8C\x83\xE2\x8C\xA5\xE2\x8C\x98M"), [this] {
+        keyPressed(juce::KeyPress('m', juce::ModifierKeys::commandModifier | juce::ModifierKeys::altModifier |
+                juce::ModifierKeys::ctrlModifier, 'm'));
+    });
+    menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(audioSettings));
+}
+
+void MainComponent::setTheme(int index, bool save) {
+    themeIndex = index;
+    const auto pairs = crate::applyTheme(index);
+    crateLook.applyThemeColours();
+    juce::Typeface::clearTypefaceCache();
+    crate::recolour(*this, pairs);
+    sendLookAndFeelChange();
+    resized();
+    repaint();
+    if (save) {
+        auto* object = new juce::DynamicObject();
+        object->setProperty("theme", crate::themeNames()[index]);
+        settingsFile().getParentDirectory().createDirectory();
+        settingsFile().replaceWithText(juce::JSON::toString(juce::var(object)));
+    }
+}
+
+void MainComponent::showToast(const juce::String& message) {
+    toast.setText(message, juce::dontSendNotification);
+    toast.setColour(juce::Label::backgroundColourId, crate::panel.withAlpha(0.95f));
+    toast.setColour(juce::Label::outlineColourId, crate::green);
+    toast.setColour(juce::Label::textColourId, crate::green);
+    toast.setBounds(getLocalBounds().withSizeKeepingCentre(220, 34).withY(40));
+    toast.setVisible(true);
+    toast.toFront(false);
+    toastTicks = 36;
+}
+
+void MainComponent::changeMasterVolume(float delta) {
+    const float level = juce::jlimit(0.0f, 1.0f, mixer.masterVolume() + delta);
+    mixer.setMasterVolume(level);
+    showToast("MASTER " + juce::String(juce::roundToInt(level * 100)) + "%");
+}
+
+// Master volume shortcuts, meant for an app-linked Ulanzi Dial preset:
+// Control-Option-Command ] up, [ down, M mute.
+bool MainComponent::keyPressed(const juce::KeyPress& key) {
+    const auto mods = key.getModifiers();
+    if (!(mods.isCommandDown() && mods.isAltDown() && mods.isCtrlDown())) {
+        return false;
+    }
+    const auto character = juce::CharacterFunctions::toLowerCase(key.getTextCharacter());
+    const auto code = key.getKeyCode();
+    if (code == ']' || character == ']') {
+        changeMasterVolume(0.02f);
+        return true;
+    }
+    if (code == '[' || character == '[') {
+        changeMasterVolume(-0.02f);
+        return true;
+    }
+    if (code == 'M' || code == 'm' || character == 'm') {
+        const float level = mixer.masterVolume();
+        if (level > 0) {
+            volumeBeforeMute = level;
+            mixer.setMasterVolume(0);
+            showToast("MASTER MUTED");
+        } else {
+            mixer.setMasterVolume(volumeBeforeMute > 0 ? volumeBeforeMute : 1.0f);
+            showToast("MASTER " + juce::String(juce::roundToInt(mixer.masterVolume() * 100)) + "%");
+        }
+        return true;
+    }
+    return false;
+}
+
 void MainComponent::showAudioSettings() {
     if (audioSettingsWindow != nullptr) {
         audioSettingsWindow->toFront(true);
@@ -1323,7 +1452,7 @@ void MainComponent::setDeckCount(int visible) {
 
 void MainComponent::paint(juce::Graphics& g) {
     g.fillAll(crate::background);
-    g.setColour(juce::Colour(0xff1b1e20));
+    g.setColour(crate::topBar);
     g.fillRect(0, 0, getWidth(), 30);
     g.setColour(crate::line);
     g.drawHorizontalLine(30, 0, static_cast<float>(getWidth()));

@@ -8,16 +8,47 @@
 namespace spindeck {
 
 namespace crate {
-inline const juce::Colour background{0xff0c0d0e};
-inline const juce::Colour panel{0xff17191b};
-inline const juce::Colour inset{0xff0f1112};
-inline const juce::Colour line{0xff2b2f32};
-inline const juce::Colour text{0xffeeeeec};
-inline const juce::Colour muted{0xff989ea2};
-inline const juce::Colour green{0xff45c94a};
-inline const juce::Colour amber{0xffff8a1d};
-inline const juce::Colour control{0xff24282b};
-inline const juce::Colour orangeDark{0xff5a2f0c};
+// Theme colours. These change when a colour theme is picked (see applyTheme).
+inline juce::Colour background{0xff0c0d0e};
+inline juce::Colour panel{0xff17191b};
+inline juce::Colour inset{0xff0f1112};
+inline juce::Colour line{0xff2b2f32};
+inline juce::Colour text{0xffeeeeec};
+inline juce::Colour muted{0xff989ea2};
+inline juce::Colour green{0xff45c94a};
+inline juce::Colour amber{0xffff8a1d};
+inline juce::Colour control{0xff24282b};
+inline juce::Colour orangeDark{0xff5a2f0c};
+inline juce::Colour ink{0xff0b0c0d};            // Text on bright buttons.
+inline juce::Colour playFill{0xff2f9a33};
+inline juce::Colour cueFill{0xffe2700f};
+inline juce::Colour waveBackground{0xff070808};
+inline juce::Colour topBar{0xff1b1e20};
+inline juce::Colour tabOn{0xff3a3f43};
+inline juce::Colour selection{0xff2a4a33};
+inline juce::Colour rowAlt{0xff121416};
+inline juce::Colour playhead{0xff4aa8ff};
+inline juce::Colour card{0xff1d2022};
+inline juce::Colour starFill{0xff1f5a23};
+inline juce::Colour starText{0xff9df59d};
+inline juce::Colour folderSelection{0xff253a4f};
+inline juce::Colour knobTop{0xff3b4043};
+inline juce::Colour knobBottom{0xff151719};
+inline juce::Colour track{0xff050606};
+inline juce::Colour thumb{0xffd8d8d6};
+inline juce::Colour clip{0xffff3b30};
+inline std::array<juce::Colour, 4> decks{juce::Colour(0xff76dba0), juce::Colour(0xffedb66c),
+        juce::Colour(0xff8cb4eb), juce::Colour(0xffd89fcf)};
+inline std::array<juce::Colour, 5> wave{juce::Colour(0xffff2d1c), juce::Colour(0xffff7a14),
+        juce::Colour(0xfff5d31c), juce::Colour(0xff4fe04a), juce::Colour(0xff36c9e8)};
+inline juce::String fontName;                   // Empty means the system font.
+
+// Built-in themes, in menu order.
+juce::StringArray themeNames();
+// Switch the colours above. Returns old-to-new colour pairs so existing controls can be recoloured.
+std::vector<std::pair<juce::Colour, juce::Colour>> applyTheme(int index);
+// Recolour a component tree from the pairs applyTheme returned.
+void recolour(juce::Component&, const std::vector<std::pair<juce::Colour, juce::Colour>>&);
 
 // Brand lettering. Kept in one place so a font choice can be added to Settings later.
 inline juce::FontOptions brandFont(float height) {
@@ -33,6 +64,7 @@ std::pair<juce::String, juce::String> titleAndArtist(const juce::File&);
 class Look final : public juce::LookAndFeel_V4 {
   public:
     Look();
+    void applyThemeColours();
     void drawButtonBackground(juce::Graphics&, juce::Button&, const juce::Colour&, bool, bool) override;
     juce::Font getTextButtonFont(juce::TextButton&, int buttonHeight) override;
     void drawRotarySlider(juce::Graphics&, int x, int y, int width, int height, float position,
@@ -73,9 +105,9 @@ class CrateMixer final : public juce::Component {
     std::array<juce::Rectangle<int>, 4> meters, filterLabels;
     std::array<std::array<juce::Rectangle<int>, 3>, 4> eqLabels;
     std::array<float, 4> peaks{};
-    juce::Slider crossfade, blend, booth;
+    juce::Slider crossfade, blend, booth, master;
     juce::TextButton split{"SPLIT"};
-    juce::Rectangle<int> blendLabel, boothLabel;
+    juce::Rectangle<int> blendLabel, boothLabel, masterLabel;
 };
 
 class CrateEcho final : public juce::Component {
@@ -108,6 +140,8 @@ class CrateLibrary final : public juce::Component, public juce::FileDragAndDropT
     void addTrack(const juce::File&, std::optional<double> bpm = {}, double seconds = 0,
             std::optional<MusicalKey> key = {});
     void setDeckCount(int);
+    // Re-check which library songs have stems (after Make Stems finishes, for example).
+    void refreshStemMarkers();
     // Save a GOOD MIX right away (from the T7), keeping the current Sync and Key Lock setup.
     bool quickSaveMix(std::size_t outgoingDeck, std::size_t incomingDeck);
     std::function<FourDeckMixer::TrackContext()> readTrackContext;
@@ -222,6 +256,13 @@ class CrateLibrary final : public juce::Component, public juce::FileDragAndDropT
     juce::Rectangle<int> sidebar, mixPanel;
     std::unique_ptr<juce::FileChooser> chooser;
     juce::ThreadPool analysisWorker{1};
+    // Song details are read from the files in the background and saved, so each file is read once.
+    void startTagScan();
+    juce::ThreadPool tagWorker{1};
+    bool tagScanRunning = false;
+    std::shared_ptr<std::atomic<bool>> tagScanCancel = std::make_shared<std::atomic<bool>>(false);
+    std::map<juce::String, bool> stemMarks;
+    bool hasStems(const juce::File&);
 };
 
 }

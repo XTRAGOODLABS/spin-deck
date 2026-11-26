@@ -39,6 +39,9 @@ class FourDeckMixer final : public juce::AudioSource {
     void setTempoBend(std::size_t index, int direction, bool held);
     void matchDeckKey(std::size_t index);
     void setBoothLevel(float level);
+    // Master output volume (speakers, outputs 1-2). Recording, booth and headphones are not affected.
+    void setMasterVolume(float level);
+    float masterVolume() const;
     juce::Result startRecording(const juce::File& file);
     void stopRecording();
     bool isRecording() const;
@@ -156,6 +159,8 @@ class FourDeckMixer final : public juce::AudioSource {
     std::array<std::array<bool, 2>, 4> pitchBend{};
     float boothLevel = 1;
     juce::SmoothedValue<float> boothGain{1};
+    juce::SmoothedValue<float> masterGain{1};
+    float masterVolumeLevel = 1;
     juce::TimeSliceThread recordingThread{"Mix recording"};
     std::unique_ptr<juce::AudioFormatWriter::ThreadedWriter> recorder;
     bool recordingOverflow = false;

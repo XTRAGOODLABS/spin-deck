@@ -58,6 +58,7 @@ class DeckPanel final : public juce::Component, public juce::DragAndDropTarget,
     int loadNoticeTicks = 0;
     bool compact = false;
     juce::String artistInitials;
+    juce::Image artwork;
     bool loading = false;
     juce::Label title;
     juce::Label track;
@@ -141,6 +142,15 @@ class MainComponent final : public juce::AudioAppComponent, public juce::DragAnd
 
   private:
     void showAudioSettings();
+    void showSettingsMenu();
+    void setTheme(int index, bool save);
+    void changeMasterVolume(float delta);
+    void showToast(const juce::String&);
+    bool keyPressed(const juce::KeyPress&) override;
+    int themeIndex = 0;
+    float volumeBeforeMute = 1.0f;
+    juce::Label toast;
+    int toastTicks = 0;
     void rememberT7AudioTiming();
     void chooseSampler(std::size_t);
     void setDeckCount(int);
@@ -159,6 +169,7 @@ class MainComponent final : public juce::AudioAppComponent, public juce::DragAnd
     juce::Rectangle<int> waveformArea;
     int deckCount = 2;
     int suggestionTicks = 0;
+    int stemMarkerTicks = 0;
     std::array<std::unique_ptr<DeckPanel>, 4> panels;
     std::array<std::unique_ptr<GridTools>, 4> gridTools;
     static constexpr int gridToolsWidth = 112;

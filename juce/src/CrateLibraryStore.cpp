@@ -1,6 +1,7 @@
 #include "CrateLibraryStore.h"
 
 #include <sqlite3.h>
+#include <tuple>
 
 namespace spindeck {
 namespace {
@@ -39,7 +40,9 @@ CrateLibraryStore::CrateLibraryStore(const juce::File& file) {
             "modified_ms INTEGER NOT NULL, analyzed INTEGER NOT NULL); "
             "CREATE TABLE IF NOT EXISTS playlists (source TEXT NOT NULL, position INTEGER NOT NULL, "
             "path TEXT NOT NULL, PRIMARY KEY (source, position)); "
-            "CREATE TABLE IF NOT EXISTS playlist_names (source TEXT PRIMARY KEY, name TEXT NOT NULL)", nullptr, nullptr, nullptr) == SQLITE_OK;
+            "CREATE TABLE IF NOT EXISTS playlist_names (source TEXT PRIMARY KEY, name TEXT NOT NULL); "
+            "CREATE TABLE IF NOT EXISTS track_tags (path TEXT PRIMARY KEY, modified_ms INTEGER NOT NULL, "
+            "title TEXT, artist TEXT, album TEXT, genre TEXT, year TEXT)", nullptr, nullptr, nullptr) == SQLITE_OK;
 }
 
 CrateLibraryStore::~CrateLibraryStore() {
@@ -108,6 +111,51 @@ bool CrateLibraryStore::mergeTracks(const std::vector<CrateTrack>& tracks) const
     const bool ok = insert && std::all_of(tracks.begin(), tracks.end(), [&](const auto& track) {
         return writeTrack(insert.get(), track) && sqlite3_reset(insert.get()) == SQLITE_OK;
     });
+    if (ok && sqlite3_exec(db, "COMMIT", nullptr, nullptr, nullptr) == SQLITE_OK) {
+        return true;
+    }
+    sqlite3_exec(db, "ROLLBACK", nullptr, nullptr, nullptr);
+    return false;
+}
+
+std::map<juce::String, std::pair<juce::int64, TrackTags>> CrateLibraryStore::loadTags() const {
+    std::map<juce::String, std::pair<juce::int64, TrackTags>> result;
+    if (!ready) {
+        return result;
+    }
+    auto statement = prepare(db, "SELECT path,modified_ms,title,artist,album,genre,year FROM track_tags");
+    if (!statement) {
+        return result;
+    }
+    const auto text = [&](int column) {
+        const auto* value = sqlite3_column_text(statement.get(), column);
+        return value ? juce::String::fromUTF8(reinterpret_cast<const char*>(value)) : juce::String{};
+    };
+    while (sqlite3_step(statement.get()) == SQLITE_ROW) {
+        result[text(0)] = {sqlite3_column_int64(statement.get(), 1),
+                TrackTags{text(2), text(3), text(4), text(5), text(6)}};
+    }
+    return result;
+}
+
+bool CrateLibraryStore::saveTags(const std::vector<std::tuple<juce::String, juce::int64, TrackTags>>& rows) const {
+    if (!ready || rows.empty() || sqlite3_exec(db, "BEGIN IMMEDIATE", nullptr, nullptr, nullptr) != SQLITE_OK) {
+        return false;
+    }
+    auto insert = prepare(db, "INSERT OR REPLACE INTO track_tags VALUES (?1,?2,?3,?4,?5,?6,?7)");
+    bool ok = insert != nullptr;
+    for (const auto& [path, modified, tags] : rows) {
+        if (!ok) {
+            break;
+        }
+        int column = 1;
+        const auto bind = [&](const juce::String& value) {
+            return sqlite3_bind_text(insert.get(), column++, value.toRawUTF8(), -1, SQLITE_TRANSIENT) == SQLITE_OK;
+        };
+        ok = bind(path) && sqlite3_bind_int64(insert.get(), column++, modified) == SQLITE_OK &&
+                bind(tags.title) && bind(tags.artist) && bind(tags.album) && bind(tags.genre) && bind(tags.year) &&
+                sqlite3_step(insert.get()) == SQLITE_DONE && sqlite3_reset(insert.get()) == SQLITE_OK;
+    }
     if (ok && sqlite3_exec(db, "COMMIT", nullptr, nullptr, nullptr) == SQLITE_OK) {
         return true;
     }
