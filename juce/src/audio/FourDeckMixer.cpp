@@ -540,7 +540,7 @@ FourDeckMixer::DeckLights FourDeckMixer::deckLights(std::size_t index) const {
             deck.pcm.getNumSamples() > 0, deck.roll.has_value(), deck.quantizeEnabled, cues,
             deck.stemPcm.front().getNumSamples() > 0 ? std::optional{deck.stemMutes} : std::nullopt,
             deck.loop && deck.grid ? deck.beatAtFrame(deck.loop->end) - deck.beatAtFrame(deck.loop->start) : 0,
-            channels[index].peak};
+            channels[index].peak, deck.stemSend};
 }
 
 void FourDeckMixer::mixDeck(std::size_t index, const juce::AudioSourceChannelInfo& out, double speed) {

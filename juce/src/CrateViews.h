@@ -53,9 +53,15 @@ std::vector<std::pair<juce::Colour, juce::Colour>> applyTheme(int index);
 // Recolour a component tree from the pairs applyTheme returned.
 void recolour(juce::Component&, const std::vector<std::pair<juce::Colour, juce::Colour>>&);
 
-// Brand lettering. Kept in one place so a font choice can be added to Settings later.
+// Font choice from Settings. Titles (brand names, deck song titles, headings) can use their own font.
+inline juce::String titleFontName;
+inline bool themeMonospace = false;
+juce::StringArray fontChoices();
+void applyFontChoice(int choice);
+
 inline juce::FontOptions brandFont(float height) {
-    return juce::FontOptions(height, juce::Font::bold);
+    return titleFontName.isEmpty() ? juce::FontOptions(height, juce::Font::bold)
+                                   : juce::FontOptions(titleFontName, height, juce::Font::plain);
 }
 
 juce::String keyName(MusicalKey);
@@ -173,6 +179,11 @@ class CrateLibrary final : public juce::Component, public juce::FileDragAndDropT
     void selectedRowsChanged(int) override;
     void cellDoubleClicked(int row, int, const juce::MouseEvent&) override;
     void cellClicked(int row, int, const juce::MouseEvent&) override;
+    void sortOrderChanged(int columnId, bool forwards) override;
+    void sortResults();
+    juce::String sortText(const CrateTrack&, int column) const;
+    int sortColumn = 0; // 0 keeps library or playlist order.
+    bool sortForwards = true;
     juce::var getDragSourceDescription(const juce::SparseSet<int>& rows) override;
     int bestDeckForLoading() const;
     void returnKeyPressed(int row) override;

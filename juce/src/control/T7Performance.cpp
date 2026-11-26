@@ -235,7 +235,9 @@ void T7Performance::handle(FourDeckMixer& mixer, const T7Packet& packet) {
                 }
                 break;
             case 2:
-                if (pad < 4) {
+                if (pad < 4 && shifted) {
+                    deck.toggleStemSend(static_cast<std::size_t>(pad)); // SHIFT + stem pad: send it to the effect.
+                } else if (pad < 4) {
                     deck.toggleStemMutes(static_cast<uint8_t>(1u << pad));
                 }
                 break;
@@ -313,7 +315,9 @@ T7Performance::Lights T7Performance::lights(const FourDeckMixer& mixer) const {
                             ? 0x7c : 0x20; break;
                     case 2:
                         if (snapshot.stemMutes && pad < 4) {
-                            color = (*snapshot.stemMutes & (1u << pad)) != 0 ? 0x40 : stemColors[pad];
+                            // Muted: dark red. Sent to the effect: orange. Otherwise the stem's own colour.
+                            color = (*snapshot.stemMutes & (1u << pad)) != 0 ? 0x40
+                                    : (snapshot.stemSends & (1u << pad)) != 0 ? 0x7c : stemColors[pad];
                         }
                         break;
                     case 4: color = pad < 4 ? 0x44 : 0x10; break;

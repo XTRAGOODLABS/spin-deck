@@ -18,6 +18,7 @@ class DeckPanel final : public juce::Component, public juce::DragAndDropTarget,
     void loadFile(const juce::File&, std::optional<DeckEngine::MixPoint> point = {},
             std::function<void()> onSuccess = {});
     bool isLoading() const { return loading; }
+    void refreshFonts();
     // Load from the library or a drag. Refuses while the deck is playing so a set isn't cut off.
     bool loadFromUser(const juce::File&);
     bool isInterestedInDragSource(const SourceDetails&) override;
@@ -149,6 +150,9 @@ class MainComponent final : public juce::AudioAppComponent, public juce::DragAnd
     void showAudioSettings();
     void showSettingsMenu();
     void setTheme(int index, bool save);
+    void setFontChoice(int index, bool save);
+    void saveSetting(const juce::String& key, const juce::var& value);
+    int fontIndex = 0;
     void changeMasterVolume(float delta);
     void showToast(const juce::String&);
     bool keyPressed(const juce::KeyPress&) override;

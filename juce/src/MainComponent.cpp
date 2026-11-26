@@ -31,7 +31,7 @@ DeckPanel::DeckPanel(std::size_t panelIndex, FourDeckMixer& deckMixer)
     title.setBorderSize({});
     track.setText("No track loaded", juce::dontSendNotification);
     track.setColour(juce::Label::textColourId, crate::text);
-    track.setFont(juce::FontOptions(23.0f, juce::Font::bold));
+    track.setFont(crate::brandFont(23.0f));
     track.setBorderSize({});
     artist.setColour(juce::Label::textColourId, crate::muted);
     artist.setFont(juce::FontOptions(17.0f));
@@ -427,6 +427,11 @@ void DeckPanel::paintOverChildren(juce::Graphics& g) {
         g.setColour(colour);
         g.drawText(text, banner, juce::Justification::centred);
     }
+}
+
+void DeckPanel::refreshFonts() {
+    track.setFont(crate::brandFont(23.0f));
+    repaint();
 }
 
 void DeckPanel::mouseDown(const juce::MouseEvent& event) {
@@ -1278,9 +1283,13 @@ MainComponent::MainComponent()
     stemQueue = std::make_unique<StemQueueWindow>(this);
     {
         const auto saved = juce::JSON::parse(settingsFile());
+        fontIndex = juce::jmax(0, crate::fontChoices().indexOf(saved.getProperty("font", "Theme default").toString()));
         const auto theme = crate::themeNames().indexOf(saved.getProperty("theme", "CRATE").toString());
         if (theme > 0) {
             setTheme(theme, false);
+        }
+        if (fontIndex > 0) {
+            setFontChoice(fontIndex, false);
         }
     }
     setAudioChannels(0, 2);
@@ -1397,6 +1406,12 @@ void MainComponent::showSettingsMenu() {
         themes.addItem(names[i], true, i == themeIndex, [this, i] { setTheme(i, true); });
     }
     menu.addSubMenu("Colour theme", themes);
+    juce::PopupMenu fonts;
+    const auto fontNames = crate::fontChoices();
+    for (int i = 0; i < fontNames.size(); ++i) {
+        fonts.addItem(fontNames[i], true, i == fontIndex, [this, i] { setFontChoice(i, true); });
+    }
+    menu.addSubMenu("Font", fonts);
     menu.addSeparator();
     menu.addItem(juce::String::fromUTF8("Master volume up   \xE2\x8C\x83\xE2\x8C\xA5\xE2\x8C\x98]"), [this] { changeMasterVolume(0.02f); });
     menu.addItem(juce::String::fromUTF8("Master volume down   \xE2\x8C\x83\xE2\x8C\xA5\xE2\x8C\x98["), [this] { changeMasterVolume(-0.02f); });
@@ -1410,6 +1425,7 @@ void MainComponent::showSettingsMenu() {
 void MainComponent::setTheme(int index, bool save) {
     themeIndex = index;
     const auto pairs = crate::applyTheme(index);
+    crate::applyFontChoice(fontIndex);
     crateLook.applyThemeColours();
     juce::Typeface::clearTypefaceCache();
     crate::recolour(*this, pairs);
@@ -1417,10 +1433,33 @@ void MainComponent::setTheme(int index, bool save) {
     resized();
     repaint();
     if (save) {
-        auto* object = new juce::DynamicObject();
-        object->setProperty("theme", crate::themeNames()[index]);
-        settingsFile().getParentDirectory().createDirectory();
-        settingsFile().replaceWithText(juce::JSON::toString(juce::var(object)));
+        saveSetting("theme", crate::themeNames()[index]);
+    }
+}
+
+void MainComponent::saveSetting(const juce::String& key, const juce::var& value) {
+    auto settings = juce::JSON::parse(settingsFile());
+    if (settings.getDynamicObject() == nullptr) {
+        settings = juce::var(new juce::DynamicObject());
+    }
+    settings.getDynamicObject()->setProperty(key, value);
+    settingsFile().getParentDirectory().createDirectory();
+    settingsFile().replaceWithText(juce::JSON::toString(settings));
+}
+
+void MainComponent::setFontChoice(int index, bool save) {
+    fontIndex = index;
+    crate::applyFontChoice(index);
+    crateLook.applyThemeColours();
+    juce::Typeface::clearTypefaceCache();
+    for (auto& panel : panels) {
+        panel->refreshFonts();
+    }
+    sendLookAndFeelChange();
+    resized();
+    repaint();
+    if (save) {
+        saveSetting("font", crate::fontChoices()[index]);
     }
 }
 

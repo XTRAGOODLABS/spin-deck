@@ -164,13 +164,29 @@ std::vector<std::pair<juce::Colour, juce::Colour>> crate::applyTheme(int index) 
     for (std::size_t i = 0; i < wave.size(); ++i) {
         wave[i] = juce::Colour(theme.wave[i]);
     }
-#if JUCE_MAC
-    const juce::String monospace = "Menlo";
-#else
-    const juce::String monospace = "DejaVu Sans Mono";
-#endif
-    fontName = theme.monospace ? monospace : juce::String{};
+    themeMonospace = theme.monospace;
     return pairs;
+}
+
+namespace {
+juce::String monospaceFont() {
+#if JUCE_MAC
+    return "Menlo";
+#else
+    return "DejaVu Sans Mono";
+#endif
+}
+}
+
+juce::StringArray crate::fontChoices() {
+    return {"Theme default", "System", "Impact titles", "Monospace"};
+}
+
+void crate::applyFontChoice(int choice) {
+    titleFontName = choice == 2 ? juce::String("Impact") : juce::String{};
+    fontName = choice == 3 ? monospaceFont()
+            : choice == 1 || choice == 2 ? juce::String{}
+            : (themeMonospace ? monospaceFont() : juce::String{});
 }
 
 void crate::recolour(juce::Component& component, const std::vector<std::pair<juce::Colour, juce::Colour>>& pairs) {
@@ -958,7 +974,8 @@ CrateLibrary::CrateLibrary(const juce::File& metadataDirectory)
     table.setRowHeight(20);
     table.setHeaderHeight(24);
     table.setColour(juce::ListBox::backgroundColourId, crate::inset);
-    const auto fixed = juce::TableHeaderComponent::visible | juce::TableHeaderComponent::resizable;
+    const auto fixed = juce::TableHeaderComponent::visible | juce::TableHeaderComponent::resizable |
+            juce::TableHeaderComponent::sortable;
     table.getHeader().addColumn("#", 5, 42, 30, 60, fixed);
     table.getHeader().addColumn("Title", 1, 330, 120, -1, fixed);
     table.getHeader().addColumn("Artist", 6, 230, 90, -1, fixed);
@@ -2007,6 +2024,7 @@ void CrateLibrary::filter() {
             addMatch(i);
         }
     }
+    sortResults();
     table.deselectAllRows();
     table.updateContent();
     if (previous) {
@@ -2019,6 +2037,77 @@ void CrateLibrary::filter() {
 }
 
 int CrateLibrary::getNumRows() { return static_cast<int>(results.size()); }
+
+juce::String CrateLibrary::sortText(const CrateTrack& track, int column) const {
+    auto [title, artistName] = crate::titleAndArtist(track.file);
+    if (track.tags && track.tags->title.isNotEmpty()) {
+        title = track.tags->title;
+        if (track.tags->artist.isNotEmpty()) {
+            artistName = track.tags->artist;
+        }
+    }
+    switch (column) {
+        case 1: return title;
+        case 6: return artistName;
+        case 7: return track.tags ? track.tags->album : juce::String{};
+        case 8: return track.tags ? track.tags->genre : juce::String{};
+        case 9: return track.tags ? track.tags->year : juce::String{};
+        default: return {};
+    }
+}
+
+void CrateLibrary::sortOrderChanged(int columnId, bool forwards) {
+    // Clicking "#" goes back to the library or playlist order.
+    sortColumn = columnId == 5 ? 0 : columnId;
+    sortForwards = forwards;
+    filter();
+}
+
+void CrateLibrary::sortResults() {
+    if (sortColumn == 0) {
+        if (!sortForwards) {
+            std::reverse(results.begin(), results.end());
+        }
+        return;
+    }
+    // Number columns sort by value; songs with no value go last either way.
+    const auto number = [&](const CrateTrack& track) -> std::optional<double> {
+        switch (sortColumn) {
+            case 2: return track.bpm;
+            case 3: return track.seconds > 0 ? std::optional{track.seconds} : std::nullopt;
+            case 4:
+                if (!track.key) {
+                    return std::nullopt;
+                }
+                // Camelot order: 1A, 1B, 2A ... 12B.
+                return camelotKey(*track.key).getIntValue() * 2.0 + (camelotKey(*track.key).endsWith("B") ? 1 : 0);
+            default: return std::nullopt;
+        }
+    };
+    const bool numeric = sortColumn == 2 || sortColumn == 3 || sortColumn == 4;
+    std::vector<std::pair<juce::String, std::optional<double>>> keys(tracks.size());
+    for (const auto index : results) {
+        keys[index] = numeric ? std::pair{juce::String{}, number(tracks[index])}
+                              : std::pair{sortText(tracks[index], sortColumn), std::optional<double>{}};
+    }
+    std::stable_sort(results.begin(), results.end(), [&](std::size_t a, std::size_t b) {
+        if (numeric) {
+            const auto& x = keys[a].second;
+            const auto& y = keys[b].second;
+            if (!x || !y) {
+                return x.has_value() && !y.has_value();
+            }
+            return sortForwards ? *x < *y : *x > *y;
+        }
+        const auto& x = keys[a].first;
+        const auto& y = keys[b].first;
+        if (x.isEmpty() || y.isEmpty()) {
+            return x.isNotEmpty() && y.isEmpty();
+        }
+        const int order = x.compareNatural(y);
+        return sortForwards ? order < 0 : order > 0;
+    });
+}
 
 void CrateLibrary::selectedRowsChanged(int row) {
     const bool loadable = juce::isPositiveAndBelow(row, getNumRows()) &&

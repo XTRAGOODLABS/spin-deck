@@ -67,6 +67,7 @@ class FourDeckMixer final : public juce::AudioSource {
         std::optional<uint8_t> stemMutes;
         double loopBeats;
         float peak;
+        uint8_t stemSends = 0;
     };
     DeckLights deckLights(std::size_t deck) const;
     bool isSplitCue() const;
