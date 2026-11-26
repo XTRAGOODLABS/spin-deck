@@ -10,13 +10,25 @@
 
 namespace spindeck {
 
-class DeckPanel final : public juce::Component, private juce::Timer {
+class DeckPanel final : public juce::Component, public juce::DragAndDropTarget,
+        public juce::FileDragAndDropTarget, private juce::Timer {
   public:
     DeckPanel(std::size_t deckIndex, FourDeckMixer& mixer);
     ~DeckPanel() override;
     void loadFile(const juce::File&, std::optional<DeckEngine::MixPoint> point = {},
             std::function<void()> onSuccess = {});
     bool isLoading() const { return loading; }
+    // Load from the library or a drag. Refuses while the deck is playing so a set isn't cut off.
+    bool loadFromUser(const juce::File&);
+    bool isInterestedInDragSource(const SourceDetails&) override;
+    void itemDragEnter(const SourceDetails&) override;
+    void itemDragExit(const SourceDetails&) override;
+    void itemDropped(const SourceDetails&) override;
+    bool isInterestedInFileDrag(const juce::StringArray&) override;
+    void fileDragEnter(const juce::StringArray&, int, int) override;
+    void fileDragExit(const juce::StringArray&) override;
+    void filesDropped(const juce::StringArray&, int, int) override;
+    void paintOverChildren(juce::Graphics&) override;
     std::function<void(const juce::File&, std::optional<double>, double)> onTrackLoaded;
     void paintWaveLane(juce::Graphics&, juce::Rectangle<int>) const;
     void paint(juce::Graphics& graphics) override;
@@ -41,6 +53,9 @@ class DeckPanel final : public juce::Component, private juce::Timer {
     juce::TextButton restart;
     std::array<juce::TextButton, 5> loopSizes;
     bool cueButtonDown = false;
+    bool dropHover = false;
+    juce::String loadNotice;
+    int loadNoticeTicks = 0;
     bool compact = false;
     juce::String artistInitials;
     bool loading = false;
@@ -78,7 +93,8 @@ class DeckPanel final : public juce::Component, private juce::Timer {
 
 class StemQueueWindow;
 
-class MainComponent final : public juce::AudioAppComponent, private juce::Timer {
+class MainComponent final : public juce::AudioAppComponent, public juce::DragAndDropContainer,
+        private juce::Timer {
   public:
     MainComponent();
     ~MainComponent() override;

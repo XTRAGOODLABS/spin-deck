@@ -313,6 +313,86 @@ void DeckPanel::paintWaveLane(juce::Graphics& g, juce::Rectangle<int> lane) cons
     g.drawText(juce::String(deckIndex + 1), lane.getX() + 6, lane.getY() + 3, 14, 13, juce::Justification::centredLeft);
 }
 
+bool DeckPanel::loadFromUser(const juce::File& file) {
+    if (engine.isPlaying()) {
+        loadNotice = "Deck is playing. Stop it to load.";
+        loadNoticeTicks = 40;
+        repaint();
+        return false;
+    }
+    if (loading || !file.existsAsFile()) {
+        return false;
+    }
+    loadFile(file);
+    return true;
+}
+
+namespace {
+bool isDeckAudio(const juce::File& file) {
+    return file.hasFileExtension("mp3;wav;aif;aiff;flac;ogg;opus;m4a;mp4;aac;alac");
+}
+}
+
+bool DeckPanel::isInterestedInDragSource(const SourceDetails& details) {
+    return details.description.toString().startsWith(CrateLibrary::dragPrefix);
+}
+
+void DeckPanel::itemDragEnter(const SourceDetails&) {
+    dropHover = true;
+    repaint();
+}
+
+void DeckPanel::itemDragExit(const SourceDetails&) {
+    dropHover = false;
+    repaint();
+}
+
+void DeckPanel::itemDropped(const SourceDetails& details) {
+    dropHover = false;
+    loadFromUser(juce::File(details.description.toString().fromFirstOccurrenceOf(CrateLibrary::dragPrefix, false, false)));
+    repaint();
+}
+
+bool DeckPanel::isInterestedInFileDrag(const juce::StringArray& paths) {
+    return paths.size() > 0 && isDeckAudio(juce::File(paths[0]));
+}
+
+void DeckPanel::fileDragEnter(const juce::StringArray&, int, int) {
+    dropHover = true;
+    repaint();
+}
+
+void DeckPanel::fileDragExit(const juce::StringArray&) {
+    dropHover = false;
+    repaint();
+}
+
+void DeckPanel::filesDropped(const juce::StringArray& paths, int, int) {
+    dropHover = false;
+    loadFromUser(juce::File(paths[0]));
+    repaint();
+}
+
+void DeckPanel::paintOverChildren(juce::Graphics& g) {
+    const auto showNotice = loadNoticeTicks > 0;
+    if (dropHover || showNotice) {
+        const auto colour = dropHover && !engine.isPlaying() ? crate::green : crate::amber;
+        g.setColour(colour.withAlpha(0.14f));
+        g.fillRect(getLocalBounds());
+        g.setColour(colour);
+        g.drawRect(getLocalBounds(), 2);
+        g.setFont(juce::FontOptions(20.0f, juce::Font::bold));
+        const auto text = dropHover ? (engine.isPlaying() ? juce::String("Deck is playing. Stop it to load.")
+                                                          : "Drop to load on Deck " + juce::String(deckIndex + 1))
+                                    : loadNotice;
+        auto banner = getLocalBounds().withSizeKeepingCentre(getWidth() - 40, 44);
+        g.setColour(juce::Colour(0xee101213));
+        g.fillRoundedRectangle(banner.toFloat(), 6.0f);
+        g.setColour(colour);
+        g.drawText(text, banner, juce::Justification::centred);
+    }
+}
+
 void DeckPanel::mouseDown(const juce::MouseEvent& event) {
     seekFromOverview(event.getPosition());
 }
@@ -579,6 +659,9 @@ void DeckPanel::togglePlayback() {
 }
 
 void DeckPanel::timerCallback() {
+    if (loadNoticeTicks > 0 && --loadNoticeTicks == 0) {
+        repaint();
+    }
     const auto muted = engine.mutedStems();
     for (std::size_t i = 0; i < stemButtons.size(); ++i) {
         stemButtons[i].setEnabled(muted.has_value());
@@ -708,7 +791,7 @@ MainComponent::MainComponent()
     };
     library.readTrackContext = [this] { return mixer.trackContext(); };
     library.onLoad = [this](int index, const juce::File& file) {
-        panels[static_cast<std::size_t>(index)]->loadFile(file);
+        panels[static_cast<std::size_t>(index)]->loadFromUser(file);
     };
     library.onLoadSuggested = [this](int index, const juce::File& file) {
         if (index < deckCount && !mixer.deck(static_cast<std::size_t>(index)).isPlaying()) {

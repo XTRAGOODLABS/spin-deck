@@ -454,7 +454,8 @@ CrateMixer::CrateMixer(FourDeckMixer& source) : mixer(source) {
         cues[i].onClick = [this, i] { mixer.toggleCue(i); refresh(); };
         stars[i].setButtonText(juce::String::fromUTF8("\xE2\x98\x85"));
         stars[i].setTitle("Save GOOD MIX into " + title);
-        stars[i].setTooltip("Save a GOOD MIX: this deck's song worked after the other deck's song.");
+        stars[i].setTooltip("Save GOOD MIX: press the star on the deck you just mixed INTO. "
+                            "Same as SHIFT + ASSIST on the T7.");
         stars[i].setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1f5a23));
         stars[i].setColour(juce::TextButton::textColourOffId, juce::Colour(0xff9df59d));
         stars[i].onClick = [this, i] {
@@ -1764,12 +1765,118 @@ void CrateLibrary::cellDoubleClicked(int row, int, const juce::MouseEvent&) {
     returnKeyPressed(row);
 }
 
+int CrateLibrary::bestDeckForLoading() const {
+    const auto state = readTrackContext ? readTrackContext() : context;
+    // Prefer an empty deck, then any deck that isn't playing.
+    for (int pass = 0; pass < 2; ++pass) {
+        for (int i = 0; i < visibleDecks; ++i) {
+            const auto& deck = state.decks[static_cast<std::size_t>(i)];
+            if (!deck.playing && (pass == 1 || deck.file == juce::File{})) {
+                return i;
+            }
+        }
+    }
+    return -1;
+}
+
 void CrateLibrary::returnKeyPressed(int row) {
     if (juce::isPositiveAndBelow(row, getNumRows()) && onLoad) {
         const auto& track = tracks[results[static_cast<std::size_t>(row)]];
-        if (track.available) {
-            onLoad(0, track.file);
+        const int deck = bestDeckForLoading();
+        if (track.available && deck >= 0) {
+            onLoad(deck, track.file);
+        } else if (deck < 0) {
+            saveStatus.setColour(juce::Label::textColourId, crate::amber);
+            saveStatus.setText("Every deck is playing. Stop one to load.", juce::dontSendNotification);
+            resized();
         }
+    }
+}
+
+void CrateLibrary::cellClicked(int row, int, const juce::MouseEvent& event) {
+    if (!event.mods.isPopupMenu() || !juce::isPositiveAndBelow(row, getNumRows())) {
+        return;
+    }
+    table.selectRow(row);
+    const auto file = tracks[results[static_cast<std::size_t>(row)]].file;
+    const auto state = readTrackContext ? readTrackContext() : context;
+    juce::PopupMenu menu;
+    for (int i = 0; i < visibleDecks; ++i) {
+        const bool playing = state.decks[static_cast<std::size_t>(i)].playing;
+        menu.addItem("Load on Deck " + juce::String(i + 1) + (playing ? "  (playing)" : ""),
+                !playing && file.existsAsFile(), false, [this, i, file] {
+                    if (onLoad) {
+                        onLoad(i, file);
+                    }
+                });
+    }
+    menu.addSeparator();
+    menu.addItem("Show in Finder", file.exists(), false, [file] { file.revealToUser(); });
+    menu.showMenuAsync(juce::PopupMenu::Options{});
+}
+
+juce::var CrateLibrary::getDragSourceDescription(const juce::SparseSet<int>& rows) {
+    if (rows.isEmpty() || !juce::isPositiveAndBelow(rows[0], getNumRows())) {
+        return {};
+    }
+    const auto& track = tracks[results[static_cast<std::size_t>(rows[0])]];
+    return track.available ? juce::var(juce::String(dragPrefix) + track.file.getFullPathName()) : juce::var{};
+}
+
+namespace {
+bool isAudioFile(const juce::File& file) {
+    return file.hasFileExtension("mp3;wav;aif;aiff;flac;ogg;opus;m4a;mp4;aac;alac");
+}
+}
+
+bool CrateLibrary::isInterestedInFileDrag(const juce::StringArray& paths) {
+    return std::any_of(paths.begin(), paths.end(), [](const auto& path) {
+        const juce::File file(path);
+        return file.isDirectory() || isAudioFile(file);
+    });
+}
+
+void CrateLibrary::fileDragEnter(const juce::StringArray&, int, int) {
+    fileDragHover = true;
+    repaint();
+}
+
+void CrateLibrary::fileDragExit(const juce::StringArray&) {
+    fileDragHover = false;
+    repaint();
+}
+
+void CrateLibrary::filesDropped(const juce::StringArray& paths, int, int) {
+    fileDragHover = false;
+    int added = 0;
+    for (const auto& path : paths) {
+        const juce::File file(path);
+        if (file.isDirectory()) {
+            for (const auto& entry : juce::RangedDirectoryIterator(file, true, "*", juce::File::findFiles)) {
+                if (isAudioFile(entry.getFile()) && added < 5000) {
+                    addTrack(entry.getFile());
+                    ++added;
+                }
+            }
+        } else if (isAudioFile(file)) {
+            addTrack(file);
+            ++added;
+        }
+    }
+    saveStatus.setColour(juce::Label::textColourId, crate::green);
+    saveStatus.setText("Added " + juce::String(added) + (added == 1 ? " track" : " tracks"), juce::dontSendNotification);
+    resized();
+    repaint();
+}
+
+void CrateLibrary::paintOverChildren(juce::Graphics& g) {
+    if (fileDragHover) {
+        g.setColour(crate::green.withAlpha(0.12f));
+        g.fillRect(table.getBounds());
+        g.setColour(crate::green);
+        g.drawRect(table.getBounds(), 2);
+        g.setFont(juce::FontOptions(18.0f, juce::Font::bold));
+        g.drawText("Drop to add to the library", table.getBounds(), juce::Justification::centred);
     }
 }
 

@@ -134,6 +134,8 @@ The main window now follows the CRATE concept:
 - FX bar with per-deck effect, ARM and ON, plus shared BEAT and DEPTH.
 - Library: search, a Crate OS folder list with playlists, # / Title / Artist / Key / BPM / Duration columns, and an ADD / IMPORT menu. GOOD MIXX shows Next Tracks cards with Load and Recall, and a menu for Save Mix and Relink.
 
+Loading tracks: drag a library row onto any deck, or drag audio from Finder onto a deck (loads it) or onto the library (adds files or whole folders). Double-click or Return loads onto an empty deck first, then any stopped deck. Right-click a row for Load on Deck 1–4 and Show in Finder. A playing deck refuses a new track and says so, so a set can't be cut off by accident.
+
 Checked by rendering the window at 1672×941, 1400×900 (BIG LIBRARY) and 1000×730, in two-deck and four-deck modes, and by running the audio test suite. The Apple Silicon build and hands-on use still need to be confirmed on the Mac.
 
 ## Blockers and unverified areas

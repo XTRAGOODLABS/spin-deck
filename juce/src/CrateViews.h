@@ -97,7 +97,8 @@ class CrateEcho final : public juce::Component {
     juce::Rectangle<int> centre;
 };
 
-class CrateLibrary final : public juce::Component, private juce::TableListBoxModel {
+class CrateLibrary final : public juce::Component, public juce::FileDragAndDropTarget,
+        private juce::TableListBoxModel {
   public:
     explicit CrateLibrary(const juce::File& metadataDirectory);
     ~CrateLibrary() override;
@@ -115,14 +116,26 @@ class CrateLibrary final : public juce::Component, private juce::TableListBoxMod
     std::function<void(int, const juce::File&, int, const juce::File&,
             const std::optional<GoodMixxHistory::Points>&)> onRecallMix;
     void paint(juce::Graphics&) override;
+    void paintOverChildren(juce::Graphics&) override;
     void resized() override;
+    // Drop audio files or folders from Finder to add them to the library.
+    bool isInterestedInFileDrag(const juce::StringArray&) override;
+    void fileDragEnter(const juce::StringArray&, int, int) override;
+    void fileDragExit(const juce::StringArray&) override;
+    void filesDropped(const juce::StringArray&, int, int) override;
+    // Drag text that identifies a library track being dragged onto a deck.
+    static constexpr const char* dragPrefix = "spindeck-track:";
 
   private:
+    bool fileDragHover = false;
     int getNumRows() override;
     void paintRowBackground(juce::Graphics&, int, int, int, bool) override;
     void paintCell(juce::Graphics&, int, int, int, int, bool) override;
     void selectedRowsChanged(int) override;
     void cellDoubleClicked(int row, int, const juce::MouseEvent&) override;
+    void cellClicked(int row, int, const juce::MouseEvent&) override;
+    juce::var getDragSourceDescription(const juce::SparseSet<int>& rows) override;
+    int bestDeckForLoading() const;
     void returnKeyPressed(int row) override;
     juce::String getCellTooltip(int row, int) override;
     void filter();
