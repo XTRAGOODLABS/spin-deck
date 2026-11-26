@@ -119,6 +119,7 @@ std::optional<TrackMetadata> TrackMetadataStore::read(
         }
     }
     result.mainCue = number(object->getProperty("mainCue"));
+    result.gridLocked = static_cast<bool>(object->getProperty("gridLocked"));
     if (const auto* values = object->getProperty("cues").getArray()) {
         for (int slot = 0; slot < std::min(values->size(), static_cast<int>(result.cues.size())); ++slot) {
             result.cues[static_cast<std::size_t>(slot)] = number((*values)[slot]);
@@ -168,6 +169,9 @@ bool TrackMetadataStore::edit(const juce::File& track, const std::function<void(
     object->setProperty("path", track.getFullPathName());
     if (metadata->mainCue) {
         object->setProperty("mainCue", *metadata->mainCue);
+    }
+    if (metadata->gridLocked) {
+        object->setProperty("gridLocked", true);
     }
     if (metadata->grid) {
         object->setProperty("bpm", metadata->grid->bpm);

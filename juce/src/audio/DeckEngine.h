@@ -6,6 +6,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 
 #include <array>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <variant>
@@ -37,6 +38,14 @@ class DeckEngine final {
     bool setBeatGrid(double bpm, double anchorSeconds);
     bool setBeatAnchorAtPlayhead(double bpm);
     std::optional<TrackBeatGrid> beatGrid() const;
+    // Beat grid tools. Each edit is saved with the track and can be undone once.
+    bool alignGridToPlayhead();           // Move the grid so the nearest beat sits at the playhead.
+    bool shiftGrid(double seconds);       // Nudge the whole grid earlier (negative) or later.
+    bool nudgeGridTempo(double bpmChange); // Constant-tempo grids only; keeps the beat under the playhead.
+    bool revertGrid();
+    bool canRevertGrid() const;
+    void setGridLocked(bool locked);
+    bool isGridLocked() const;
     bool metadataSaveFailed() const;
     void setKeyLock(bool enabled);
     bool isKeyLockEnabled() const;
@@ -123,6 +132,9 @@ class DeckEngine final {
     void prepareKeyLock(double deviceRate);
     void renderKeyLocked(const juce::AudioSourceChannelInfo& output, double deviceRate, double speed);
     void persistGrid(const juce::File& track, TrackBeatGrid value);
+    bool editGrid(const std::function<std::optional<TrackBeatGrid>(const TrackBeatGrid&, double playheadSeconds)>&);
+    std::optional<TrackBeatGrid> previousGrid;
+    bool gridLocked = false;
     void persistCue(const juce::File& track, std::size_t slot, std::optional<double> value);
     void recordSaveResult(const juce::File& track, bool success);
 

@@ -136,6 +136,8 @@ The main window now follows the CRATE concept:
 
 Loading tracks: drag a library row onto any deck, or drag audio from Finder onto a deck (loads it) or onto the library (adds files or whole folders). Double-click or Return loads onto an empty deck first, then any stopped deck. Right-click a row for Load on Deck 1–4 and Show in Finder. A playing deck refuses a new track and says so, so a set can't be cut off by accident.
 
+Beat grid tools sit at the right end of each waveform, as in the original Spin Deck: line the grid up with the playhead, nudge it earlier or later (10 ms, SHIFT for 1 ms), grid BPM down or up (0.01, SHIFT for 0.1; constant grids only), undo the last grid change, and a lock that is saved with the track and blocks every grid edit including SET BEAT 1. Key lock is on for every deck when the app starts and stays on across loads until switched off.
+
 Checked by rendering the window at 1672×941, 1400×900 (BIG LIBRARY) and 1000×730, in two-deck and four-deck modes, and by running the audio test suite. The Apple Silicon build and hands-on use still need to be confirmed on the Mac.
 
 ## Blockers and unverified areas

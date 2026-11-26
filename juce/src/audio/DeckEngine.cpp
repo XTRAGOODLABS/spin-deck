@@ -106,6 +106,8 @@ bool DeckEngine::load(const juce::File& file, Overview* overview) {
         sourceRate = rate;
         loadedTrack = file;
         saveFailed = !saved;
+        previousGrid.reset();
+        gridLocked = metadata.gridLocked;
         playing = false;
         setScratch({});
         frame = 0;
@@ -397,9 +399,11 @@ bool DeckEngine::setBeatGrid(double bpm, double anchorSeconds) {
     juce::File track;
     {
         const std::lock_guard lock(mutex);
-        if (!setGrid({bpm, anchorSeconds})) {
+        const auto before = grid;
+        if (gridLocked || !setGrid({bpm, anchorSeconds})) {
             return false;
         }
+        previousGrid = before;
         track = loadedTrack;
     }
     persistGrid(track, {bpm, anchorSeconds});
@@ -413,14 +417,141 @@ bool DeckEngine::setBeatAnchorAtPlayhead(double bpm) {
     {
         const std::lock_guard lock(mutex);
         const double position = transportFrame();
-        if (!setGrid({bpm, position / sourceRate})) {
+        const auto before = grid;
+        if (gridLocked || !setGrid({bpm, position / sourceRate})) {
             return false;
         }
+        previousGrid = before;
         track = loadedTrack;
         anchorSeconds = position / sourceRate;
     }
     persistGrid(track, {bpm, anchorSeconds});
     return true;
+}
+
+namespace {
+// Move a grid in time. Imported beat markers move with it; markers pushed before the start are dropped.
+std::optional<TrackBeatGrid> shiftedGrid(const TrackBeatGrid& source, double delta) {
+    TrackBeatGrid result(source.bpm, source.anchorSeconds + delta);
+    if (source.markers) {
+        std::vector<double> seconds;
+        seconds.reserve(source.markers->seconds.size());
+        std::size_t dropped = 0;
+        for (const auto time : source.markers->seconds) {
+            if (time + delta < 0) {
+                ++dropped;
+            } else {
+                seconds.push_back(time + delta);
+            }
+        }
+        const auto downbeat = source.markers->downbeat >= dropped ? source.markers->downbeat - dropped : 0;
+        if (!result.setMarkers(std::move(seconds), downbeat)) {
+            return {};
+        }
+        return result;
+    }
+    const double bar = 4 * 60 / source.bpm;
+    while (result.anchorSeconds < 0) {
+        result.anchorSeconds += bar;
+    }
+    return result;
+}
+}
+
+bool DeckEngine::editGrid(
+        const std::function<std::optional<TrackBeatGrid>(const TrackBeatGrid&, double)>& change) {
+    const std::lock_guard edits(trackEditMutex);
+    juce::File track;
+    std::optional<TrackBeatGrid> saved;
+    {
+        const std::lock_guard lock(mutex);
+        if (gridLocked || !grid || sourceRate <= 0) {
+            return false;
+        }
+        const auto before = *grid;
+        auto next = change(before, transportFrame() / sourceRate);
+        if (!next || !setGrid(std::move(*next))) {
+            return false;
+        }
+        previousGrid = before;
+        track = loadedTrack;
+        saved = grid;
+    }
+    persistGrid(track, *saved);
+    return true;
+}
+
+bool DeckEngine::alignGridToPlayhead() {
+    return editGrid([](const TrackBeatGrid& current, double playhead) {
+        const double nearest = current.timeAt(std::round(current.beatAt(playhead)));
+        return shiftedGrid(current, playhead - nearest);
+    });
+}
+
+bool DeckEngine::shiftGrid(double seconds) {
+    return editGrid([seconds](const TrackBeatGrid& current, double) { return shiftedGrid(current, seconds); });
+}
+
+bool DeckEngine::nudgeGridTempo(double bpmChange) {
+    return editGrid([bpmChange](const TrackBeatGrid& current, double playhead) -> std::optional<TrackBeatGrid> {
+        if (current.markers) {
+            return {}; // Imported variable-tempo grids keep their own beat times.
+        }
+        const double bpm = current.bpm + bpmChange;
+        if (bpm < 30 || bpm > 300) {
+            return {};
+        }
+        // Keep the beat under the playhead where it is while the spacing changes.
+        TrackBeatGrid result(bpm, playhead - (playhead - current.anchorSeconds) * current.bpm / bpm);
+        const double bar = 4 * 60 / bpm;
+        while (result.anchorSeconds < 0) {
+            result.anchorSeconds += bar;
+        }
+        return result;
+    });
+}
+
+bool DeckEngine::revertGrid() {
+    const std::lock_guard edits(trackEditMutex);
+    juce::File track;
+    std::optional<TrackBeatGrid> saved;
+    {
+        const std::lock_guard lock(mutex);
+        if (gridLocked || !previousGrid) {
+            return false;
+        }
+        auto target = *previousGrid;
+        if (!setGrid(std::move(target))) {
+            return false;
+        }
+        previousGrid.reset();
+        track = loadedTrack;
+        saved = grid;
+    }
+    persistGrid(track, *saved);
+    return true;
+}
+
+bool DeckEngine::canRevertGrid() const {
+    const std::lock_guard lock(mutex);
+    return previousGrid.has_value() && !gridLocked;
+}
+
+void DeckEngine::setGridLocked(bool locked) {
+    juce::File track;
+    {
+        const std::lock_guard lock(mutex);
+        gridLocked = locked;
+        track = loadedTrack;
+    }
+    if (track != juce::File{}) {
+        recordSaveResult(track, metadataStore.edit(track, [locked](TrackMetadata& data) { data.gridLocked = locked; }));
+    }
+}
+
+bool DeckEngine::isGridLocked() const {
+    const std::lock_guard lock(mutex);
+    return gridLocked;
 }
 
 std::optional<TrackBeatGrid> DeckEngine::beatGrid() const {

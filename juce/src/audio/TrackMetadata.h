@@ -45,6 +45,7 @@ struct TrackMetadata {
     std::array<std::optional<double>, 8> cues{};
     std::array<std::optional<double>, 8> hotLoopEnds{};
     std::vector<TrackLoop> savedLoops;
+    bool gridLocked = false;
     void addSavedLoop(TrackLoop);
 };
 

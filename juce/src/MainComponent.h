@@ -69,6 +69,7 @@ class DeckPanel final : public juce::Component, public juce::DragAndDropTarget,
     juce::TextButton deckKey{"KEY"};
     juce::Slider position;
     juce::Slider bpm;
+    double shownGridBpm = 0;
     juce::TextButton anchor{"SET BEAT 1"};
     juce::TextButton leader{"LEADER"};
     juce::TextButton sync{"SYNC"};
@@ -89,6 +90,38 @@ class DeckPanel final : public juce::Component, public juce::DragAndDropTarget,
     std::array<juce::TextButton, 4> stemButtons;
     juce::ThreadPool decoder{1};
     std::unique_ptr<juce::FileChooser> chooser;
+};
+
+// Small drawn icon buttons for the beat grid tools.
+class GridIconButton final : public juce::Button {
+  public:
+    enum class Icon { align, earlier, later, slower, faster, undo, lock };
+    GridIconButton(Icon, const juce::String& tooltip);
+    void paintButton(juce::Graphics&, bool over, bool down) override;
+
+  private:
+    Icon icon;
+};
+
+// Beat grid tools shown at the right end of each deck's waveform, like the original Spin Deck.
+class GridTools final : public juce::Component {
+  public:
+    explicit GridTools(DeckEngine&);
+    void refresh();
+    void resized() override;
+    void paint(juce::Graphics&) override;
+    std::function<void()> onGridChanged;
+
+  private:
+    void edited(bool changed);
+    DeckEngine& engine;
+    GridIconButton align{GridIconButton::Icon::align, "Line the grid up with the playhead: the nearest beat moves to where you are now."};
+    GridIconButton earlier{GridIconButton::Icon::earlier, "Move the beat grid earlier (10 ms). Hold SHIFT for 1 ms."};
+    GridIconButton later{GridIconButton::Icon::later, "Move the beat grid later (10 ms). Hold SHIFT for 1 ms."};
+    GridIconButton slower{GridIconButton::Icon::slower, "Grid BPM down 0.01. Hold SHIFT for 0.1."};
+    GridIconButton faster{GridIconButton::Icon::faster, "Grid BPM up 0.01. Hold SHIFT for 0.1."};
+    GridIconButton undo{GridIconButton::Icon::undo, "Undo the last beat grid change."};
+    GridIconButton lock{GridIconButton::Icon::lock, "Lock the beat grid so it can't be changed by accident."};
 };
 
 class StemQueueWindow;
@@ -127,6 +160,8 @@ class MainComponent final : public juce::AudioAppComponent, public juce::DragAnd
     int deckCount = 2;
     int suggestionTicks = 0;
     std::array<std::unique_ptr<DeckPanel>, 4> panels;
+    std::array<std::unique_ptr<GridTools>, 4> gridTools;
+    static constexpr int gridToolsWidth = 112;
     juce::Label buildLabel;
     juce::TextButton makeStemsButton{"MAKE STEMS"};
     juce::Label stemNote;

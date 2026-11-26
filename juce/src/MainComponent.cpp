@@ -155,7 +155,9 @@ DeckPanel::DeckPanel(std::size_t panelIndex, FourDeckMixer& deckMixer)
     };
     leader.onClick = [this] { mixer.setSyncLeader(deckIndex); };
     sync.onClick = [this] { mixer.setSyncEnabled(deckIndex, !mixer.isSyncEnabled(deckIndex)); };
-    keyLock.setTooltip("Preserve the track's pitch when sync changes tempo.");
+    keyLock.setTooltip("Key lock keeps the song's pitch when the tempo changes. On by default; switch off to let pitch follow tempo.");
+    keyLock.setColour(juce::TextButton::buttonOnColourId, crate::green);
+    engine.setKeyLock(true);
     keyLock.onClick = [this] { engine.setKeyLock(!engine.isKeyLockEnabled()); };
     loopLength.setTitle("Loop length in beats");
     for (std::size_t i = 0; i < loopBeats.size(); ++i) {
@@ -699,13 +701,19 @@ void DeckPanel::timerCallback() {
     const bool loaded = engine.durationSeconds() > 0;
     const auto grid = engine.beatGrid();
     gridStatus.setText(engine.metadataSaveFailed() ? "Save failed"
+            : engine.isGridLocked() && grid ? "Grid locked  " + juce::String(grid->tempoAt(engine.positionSeconds()), 2) + " BPM"
             : grid && grid->markers ? "Grid  " + juce::String(grid->tempoAt(engine.positionSeconds()), 1) + " BPM"
             : grid ? "Beat 1  " + juce::String(grid->anchorSeconds, 1) + " s"
                    : loaded ? "Set beat grid" : "", juce::dontSendNotification);
     repaint(overviewBounds);
     play.setEnabled(loaded);
     position.setEnabled(loaded);
-    anchor.setEnabled(loaded);
+    // Enabled below once the grid lock is known.
+    if (grid && std::abs(grid->bpm - shownGridBpm) > 1e-6 && !bpm.isMouseButtonDown()) {
+        shownGridBpm = grid->bpm;
+        bpm.setValue(grid->bpm, juce::dontSendNotification);
+    }
+    anchor.setEnabled(loaded && !engine.isGridLocked());
     const bool looping = engine.isLooping();
     const bool loopPending = engine.isLoopChangePending();
     loop.setEnabled(grid.has_value() || looping);
@@ -748,6 +756,145 @@ void DeckPanel::timerCallback() {
     }
 }
 
+GridIconButton::GridIconButton(Icon kind, const juce::String& tip) : juce::Button({}), icon(kind) {
+    setTooltip(tip);
+    setTitle(tip.upToFirstOccurrenceOf(".", false, false));
+}
+
+void GridIconButton::paintButton(juce::Graphics& g, bool over, bool down) {
+    auto bounds = getLocalBounds().toFloat().reduced(0.5f);
+    const bool on = getToggleState();
+    g.setColour(on ? crate::amber.withAlpha(0.9f) : juce::Colour(0xff202426).brighter(down ? 0.25f : over ? 0.1f : 0));
+    g.fillRoundedRectangle(bounds, 2.5f);
+    g.setColour(juce::Colours::white.withAlpha(0.07f));
+    g.drawRoundedRectangle(bounds, 2.5f, 1.0f);
+    const auto colour = !isEnabled() ? crate::muted.withAlpha(0.35f) : on ? juce::Colour(0xff1a0b00) : crate::text;
+    g.setColour(colour);
+    const auto c = bounds.getCentre();
+    const float h = juce::jmin(bounds.getHeight() * 0.62f, 14.0f);
+    juce::Path p;
+    const auto arrowHead = [&](float x, float y, float dir) {
+        p.addTriangle(x, y - 3.5f, x, y + 3.5f, x + 4.5f * dir, y);
+    };
+    switch (icon) {
+        case Icon::align:
+            for (int i = -1; i <= 2; ++i) {
+                g.fillRect(c.x - 6.0f + i * 3.5f, c.y - h, 1.6f, h * 2);
+            }
+            return;
+        case Icon::earlier:
+        case Icon::later: {
+            const float dir = icon == Icon::later ? 1.0f : -1.0f;
+            for (int i = 0; i < 2; ++i) {
+                g.fillRect(c.x - 5.0f + i * 10.0f, c.y - h * 0.5f, 1.4f, h);
+            }
+            g.drawLine(c.x - 4.0f * dir, c.y, c.x + 3.0f * dir, c.y, 1.4f);
+            arrowHead(c.x + 2.0f * dir, c.y, dir);
+            break;
+        }
+        case Icon::slower:
+        case Icon::faster: {
+            // Faster: beats squeeze together. Slower: beats spread apart.
+            const float spread = icon == Icon::slower ? 7.0f : 3.0f;
+            g.fillRect(c.x - spread, c.y - h * 0.5f, 1.4f, h);
+            g.fillRect(c.x + spread - 1.4f, c.y - h * 0.5f, 1.4f, h);
+            const float dir = icon == Icon::slower ? 1.0f : -1.0f;
+            arrowHead(c.x - 8.0f * (icon == Icon::slower ? 0.0f : 1.0f) - (icon == Icon::slower ? 4.0f : 2.0f), c.y, -dir);
+            arrowHead(c.x + (icon == Icon::slower ? 4.0f : 10.0f), c.y, dir);
+            break;
+        }
+        case Icon::undo: {
+            juce::Path arc;
+            arc.addCentredArc(c.x, c.y + 1, 5.0f, 5.0f, 0, -2.2f, 2.2f, true);
+            g.strokePath(arc, juce::PathStrokeType(1.5f));
+            p.addTriangle(c.x - 7.5f, c.y - 4.5f, c.x - 1.5f, c.y - 6.0f, c.x - 4.0f, c.y - 0.5f);
+            break;
+        }
+        case Icon::lock: {
+            const auto body = juce::Rectangle<float>(10, 8).withCentre({c.x, c.y + 2.5f});
+            g.fillRoundedRectangle(body, 1.5f);
+            juce::Path shackle;
+            const float shift = on ? 0.0f : 3.0f;
+            shackle.startNewSubPath(body.getX() + 2, body.getY());
+            shackle.lineTo(body.getX() + 2, body.getY() - 3 - shift);
+            shackle.addCentredArc(c.x, body.getY() - 3 - shift, 3, 3, 0, -juce::MathConstants<float>::halfPi,
+                    juce::MathConstants<float>::halfPi);
+            if (on) {
+                shackle.lineTo(body.getRight() - 2, body.getY());
+            }
+            g.strokePath(shackle, juce::PathStrokeType(1.5f));
+            return;
+        }
+    }
+    g.fillPath(p);
+}
+
+GridTools::GridTools(DeckEngine& deck) : engine(deck) {
+    const auto fine = [] { return juce::ModifierKeys::getCurrentModifiersRealtime().isShiftDown(); };
+    align.onClick = [this] { edited(engine.alignGridToPlayhead()); };
+    earlier.onClick = [this, fine] { edited(engine.shiftGrid(fine() ? -0.001 : -0.010)); };
+    later.onClick = [this, fine] { edited(engine.shiftGrid(fine() ? 0.001 : 0.010)); };
+    slower.onClick = [this, fine] { edited(engine.nudgeGridTempo(fine() ? -0.1 : -0.01)); };
+    faster.onClick = [this, fine] { edited(engine.nudgeGridTempo(fine() ? 0.1 : 0.01)); };
+    undo.onClick = [this] { edited(engine.revertGrid()); };
+    lock.onClick = [this] { engine.setGridLocked(!engine.isGridLocked()); refresh(); };
+    for (auto* button : std::initializer_list<juce::Button*>{&align, &earlier, &later, &slower, &faster, &undo, &lock}) {
+        addAndMakeVisible(button);
+    }
+    refresh();
+}
+
+void GridTools::edited(bool changed) {
+    if (changed && onGridChanged) {
+        onGridChanged();
+    }
+    refresh();
+}
+
+void GridTools::refresh() {
+    const auto grid = engine.beatGrid();
+    const bool locked = engine.isGridLocked();
+    const bool editable = grid.has_value() && !locked;
+    align.setEnabled(editable);
+    earlier.setEnabled(editable);
+    later.setEnabled(editable);
+    // Imported variable-tempo grids keep their own beat times, so only constant grids change BPM here.
+    slower.setEnabled(editable && !grid->markers);
+    faster.setEnabled(editable && !grid->markers);
+    undo.setEnabled(engine.canRevertGrid());
+    lock.setEnabled(engine.durationSeconds() > 0);
+    lock.setToggleState(locked, juce::dontSendNotification);
+    lock.setTooltip(locked ? "Beat grid locked. Click to unlock." : "Lock the beat grid so it can't be changed by accident.");
+    repaint();
+}
+
+void GridTools::paint(juce::Graphics& g) {
+    g.fillAll(juce::Colour(0xff0f1112));
+}
+
+void GridTools::resized() {
+    auto area = getLocalBounds().reduced(3, juce::jmax(2, (getHeight() - 52) / 2));
+    const bool tall = area.getHeight() >= 40;
+    align.setBounds(area.removeFromLeft(22).reduced(1));
+    const auto rowHeight = tall ? area.getHeight() / 2 : area.getHeight();
+    auto top = area.removeFromTop(rowHeight);
+    auto bottom = tall ? area : juce::Rectangle<int>{};
+    const int w = top.getWidth() / (tall ? 3 : 6);
+    earlier.setBounds(top.removeFromLeft(w).reduced(1));
+    later.setBounds(top.removeFromLeft(w).reduced(1));
+    if (tall) {
+        undo.setBounds(top.reduced(1));
+        slower.setBounds(bottom.removeFromLeft(w).reduced(1));
+        faster.setBounds(bottom.removeFromLeft(w).reduced(1));
+        lock.setBounds(bottom.reduced(1));
+    } else {
+        slower.setBounds(top.removeFromLeft(w).reduced(1));
+        faster.setBounds(top.removeFromLeft(w).reduced(1));
+        undo.setBounds(top.removeFromLeft(w).reduced(1));
+        lock.setBounds(top.reduced(1));
+    }
+}
+
 MainComponent::MainComponent()
         : mixer(trackMetadataDirectory()), t7(mixer), mixerView(mixer), echoView(mixer),
           library(trackMetadataDirectory()) {
@@ -777,6 +924,16 @@ MainComponent::MainComponent()
         panels[i]->onTrackLoaded = [this](const juce::File& file, std::optional<double> bpm, double seconds) {
             library.addTrack(file, bpm, seconds);
         };
+        gridTools[i] = std::make_unique<GridTools>(mixer.deck(i));
+        gridTools[i]->onGridChanged = [this, i] {
+            // Keep the library BPM in step with grid edits.
+            const auto file = mixer.trackContext().decks[i].file;
+            if (const auto grid = mixer.deck(i).beatGrid(); grid && file != juce::File{}) {
+                library.addTrack(file, grid->bpm, mixer.deck(i).durationSeconds());
+            }
+            repaint(waveformArea);
+        };
+        addChildComponent(*gridTools[i]);
     }
 
     t7.onBrowse = [this](int steps) { library.moveSelection(steps); };
@@ -1059,6 +1216,11 @@ void MainComponent::timerCallback() {
     echoView.refresh();
     if (++suggestionTicks == 6) {
         suggestionTicks = 0;
+        for (auto& tools : gridTools) {
+            if (tools->isVisible()) {
+                tools->refresh();
+            }
+        }
         const auto note = stemQueue ? stemQueue->progressNote() : juce::String{};
         if (note != stemNote.getText()) {
             stemNote.setText(note, juce::dontSendNotification);
@@ -1179,6 +1341,7 @@ void MainComponent::paint(juce::Graphics& g) {
         for (int i = 0; i < deckCount; ++i) {
             auto lane = lanes.removeFromTop(lanes.getHeight() / (deckCount - i));
             lane.removeFromBottom(1);
+            lane.removeFromRight(gridToolsWidth);
             panels[static_cast<std::size_t>(i)]->paintWaveLane(g, lane);
         }
     }
@@ -1223,6 +1386,18 @@ void MainComponent::resized() {
 
     area.removeFromTop(1);
     waveformArea = showWaves ? area.removeFromTop(deckCount == 4 ? 176 : 146) : juce::Rectangle<int>{};
+    {
+        auto lanes = waveformArea;
+        for (std::size_t i = 0; i < gridTools.size(); ++i) {
+            const bool shown = showWaves && i < static_cast<std::size_t>(deckCount);
+            gridTools[i]->setVisible(shown);
+            if (shown) {
+                auto lane = lanes.removeFromTop(lanes.getHeight() / (deckCount - static_cast<int>(i)));
+                lane.removeFromBottom(1);
+                gridTools[i]->setBounds(lane.removeFromRight(gridToolsWidth));
+            }
+        }
+    }
     if (!big) {
         area.removeFromTop(4);
         const int deckHeight = deckCount == 4
