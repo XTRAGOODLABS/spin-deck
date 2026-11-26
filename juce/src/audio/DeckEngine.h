@@ -19,7 +19,7 @@ class DeckEngine final {
 
     struct Overview {
         struct Bin { float peak = 0, brightness = 0; };
-        std::array<Bin, 1536> bins{};
+        std::array<Bin, 8192> bins{};
         double seconds = 0;
     };
 
@@ -66,6 +66,13 @@ class DeckEngine final {
     void clearHotCue(std::size_t slot);
     bool hasHotCue(std::size_t slot) const;
     std::optional<uint8_t> mutedStems() const;
+    // For the screen: the playing key (after any key shift) and cue positions in seconds.
+    std::optional<MusicalKey> currentKey() const;
+    struct Markers {
+        std::optional<double> cue;
+        std::array<std::optional<double>, 8> hotCues{};
+    };
+    Markers markers() const;
     void toggleStemMutes(uint8_t mask);
 
   private:

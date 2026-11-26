@@ -147,6 +147,31 @@ bool DeckEngine::load(const juce::File& file, Overview* overview) {
     return true;
 }
 
+std::optional<MusicalKey> DeckEngine::currentKey() const {
+    const std::lock_guard lock(mutex);
+    if (!sourceKey) {
+        return {};
+    }
+    auto key = *sourceKey;
+    key.tonic = ((key.tonic + transpose) % 12 + 12) % 12;
+    return key;
+}
+
+DeckEngine::Markers DeckEngine::markers() const {
+    const std::lock_guard lock(mutex);
+    Markers result;
+    if (sourceRate <= 0 || pcm.getNumSamples() == 0) {
+        return result;
+    }
+    result.cue = cueFrame / sourceRate;
+    for (std::size_t i = 0; i < cues.size(); ++i) {
+        if (cues[i]) {
+            result.hotCues[i] = *cues[i] / sourceRate;
+        }
+    }
+    return result;
+}
+
 std::optional<uint8_t> DeckEngine::mutedStems() const {
     const std::lock_guard lock(mutex);
     if (stemPcm.front().getNumSamples() == 0) {

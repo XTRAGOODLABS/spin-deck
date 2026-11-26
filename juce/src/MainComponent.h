@@ -31,7 +31,18 @@ class DeckPanel final : public juce::Component, private juce::Timer {
     FourDeckMixer& mixer;
     DeckEngine& engine;
     DeckEngine::Overview overview;
-    juce::Rectangle<int> overviewBounds;
+    juce::Rectangle<int> overviewBounds, artBounds, headerRight, stemLabel;
+    void mouseDown(const juce::MouseEvent&) override;
+    void mouseDrag(const juce::MouseEvent&) override;
+    void seekFromOverview(juce::Point<int>);
+    void pickLoopSize(std::size_t button);
+    juce::Label artist, keyLabel, bpmLabel, remaining, total;
+    juce::TextButton cueButton{"CUE"};
+    juce::TextButton restart;
+    std::array<juce::TextButton, 5> loopSizes;
+    bool cueButtonDown = false;
+    bool compact = false;
+    juce::String artistInitials;
     bool loading = false;
     juce::Label title;
     juce::Label track;
@@ -87,11 +98,15 @@ class MainComponent final : public juce::AudioAppComponent, private juce::Timer 
     void timerCallback() override;
     FourDeckMixer mixer;
     T7Midi t7;
-    juce::LookAndFeel_V4 crateLook;
+    crate::Look crateLook;
     CrateMixer mixerView;
     CrateEcho echoView;
     CrateLibrary library;
     juce::TextButton twoDecks{"2 DECKS"}, fourDecks{"4 DECKS"};
+    juce::TextButton bigLibrary{"BIG LIBRARY"}, waveformsTab{"WAVEFORMS"}, effectsTab{"EFFECTS"},
+            samplersTab{"SAMPLERS"};
+    juce::Label clock;
+    juce::Rectangle<int> logoArea, samplerArea;
     juce::Rectangle<int> waveformArea;
     int deckCount = 2;
     int suggestionTicks = 0;
@@ -105,8 +120,6 @@ class MainComponent final : public juce::AudioAppComponent, private juce::Timer 
     double t7SampleRate = 0;
     int t7BufferSize = 0;
     juce::TextButton record{"RECORD"};
-    juce::Slider booth;
-    juce::Label boothLabel;
     std::array<juce::TextButton, 8> samplePads;
     std::unique_ptr<juce::FileChooser> samplerChooser;
     juce::ThreadPool samplerLoader{1};

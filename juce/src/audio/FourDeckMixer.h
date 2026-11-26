@@ -32,6 +32,8 @@ class FourDeckMixer final : public juce::AudioSource {
     static constexpr std::array tempoRanges{0.08, 0.16, 0.50};
     struct TempoControl { double position = 0; int range = 0; };
     TempoControl tempoControl(std::size_t index) const;
+    // Current playback tempo in BPM after pitch and sync, or nothing without a beat grid.
+    std::optional<double> playingTempo(std::size_t index) const;
     void setTempoPosition(std::size_t index, double position);
     void setTempoRange(std::size_t index, int range);
     void setTempoBend(std::size_t index, int direction, bool held);
@@ -67,7 +69,7 @@ class FourDeckMixer final : public juce::AudioSource {
     bool isSplitCue() const;
 
     struct MixControls {
-        struct Strip { float fader, filter, peak; bool cue; };
+        struct Strip { float fader, filter, peak; bool cue; std::array<float, 3> eq{0.5f, 0.5f, 0.5f}; };
         std::array<Strip, 4> strips;
         float crossfade, headphoneBlend;
         bool split;
@@ -112,6 +114,7 @@ class FourDeckMixer final : public juce::AudioSource {
     struct Channel {
         float fader = 1, trim = 1, filter = 0;
         std::array<float, 3> eq{1, 1, 1};
+        std::array<float, 3> eqPosition{0.5f, 0.5f, 0.5f}; // Knob positions, low/mid/high.
         std::array<float, 2> lows{}, mids{}, filtered{};
         float peak = 0;
         bool cue = false;

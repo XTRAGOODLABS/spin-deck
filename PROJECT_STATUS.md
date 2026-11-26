@@ -110,7 +110,7 @@ T7 hot cue pads now preview saved cues while held on a paused deck, then pause a
 Added on `spindeck-juce` after the beta commit:
 
 - **SHIFT + ASSIST on the T7 saves a GOOD MIX.** The pressed deck's song is saved as working after the other deck's song, with the current sync leader, Sync and Key Lock. A loop or cue picked earlier for the same pair is kept. That deck's pads flash green (on, off, on, as in the production mapping) and the GOOD MIXX panel shows "GOOD MIX saved" with both titles. Nothing is saved, and the panel says so, unless both decks hold different songs.
-- **Impact lettering** for the SPIN DECK, CRATE, Crate OS and GOOD MIXX names.
+- **Brand lettering** is set in one place so a font choice can be added later. The font itself is unchanged.
 - **Small stem progress note** in the toolbar beside MAKE STEMS while a batch runs. The queue window no longer needs to stay open to see progress.
 - **No Mixxx naming in the app.** The library import button now reads IMPORT SPIN DECK.
 
@@ -122,6 +122,19 @@ Still open from the production plan:
 - Ulanzi Dial controlling master volume through a Spin Deck preset.
 - BeatDeck integration.
 - A STEMS marker on library rows that will load as stems.
+
+## CRATE layout matching the approved mockup
+
+The main window now follows the CRATE concept:
+
+- View tabs across the top (BIG LIBRARY, WAVEFORMS, 2 DECKS, 4 DECKS, EFFECTS, SAMPLERS), with T7 status, clock, REC, MAKE STEMS and SETTINGS on the right.
+- Colour waveforms coloured by brightness (bass red through treble cyan), a centred playhead, beat lines, and CUE and hot cue flags. Track overviews have eight times more detail and can be clicked to seek.
+- Decks: title and artist, key, live BPM after pitch and sync, remaining and total time, SYNC badge, a placeholder art tile, big CUE and PLAY, eight orange hot cue pads, beat jump, loop sizes ½ to 8, roll, a permanent STEMS row, and the tempo fader row. Narrow and four-deck layouts rearrange automatically.
+- Mixer: H/M/L EQ and filter knobs, headphone (PFL) buttons, faders with meters, an orange crossfader, CUE blend, SPLIT and BOOTH. The green stars save a GOOD MIX into that deck, as SHIFT + ASSIST does on the T7.
+- FX bar with per-deck effect, ARM and ON, plus shared BEAT and DEPTH.
+- Library: search, a Crate OS folder list with playlists, # / Title / Artist / Key / BPM / Duration columns, and an ADD / IMPORT menu. GOOD MIXX shows Next Tracks cards with Load and Recall, and a menu for Save Mix and Relink.
+
+Checked by rendering the window at 1672×941, 1400×900 (BIG LIBRARY) and 1000×730, in two-deck and four-deck modes, and by running the audio test suite. The Apple Silicon build and hands-on use still need to be confirmed on the Mac.
 
 ## Blockers and unverified areas
 

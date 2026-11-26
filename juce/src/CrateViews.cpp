@@ -80,7 +80,7 @@ class MixLoadControl final : public juce::Component {
     }
 
     void resized() override {
-        button.setBounds(getLocalBounds().reduced(5, 4).removeFromBottom(20).removeFromRight(47));
+        button.setBounds(getLocalBounds().withTrimmedBottom(6).reduced(10, 8).removeFromBottom(22).removeFromRight(64));
     }
 
     juce::TextButton button;
@@ -88,24 +88,249 @@ class MixLoadControl final : public juce::Component {
 
 }
 
+juce::String crate::keyName(MusicalKey key) {
+    static const juce::StringArray names{"C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"};
+    return names[((key.tonic % 12) + 12) % 12] + (key.major ? "" : "m");
+}
+
+juce::String crate::clockText(double seconds, bool hundredths) {
+    const bool negative = seconds < 0;
+    seconds = std::abs(seconds);
+    const auto minutes = static_cast<int>(seconds / 60);
+    const double rest = seconds - minutes * 60;
+    auto value = juce::String(minutes).paddedLeft('0', 2) + ":" +
+            (hundredths ? juce::String(rest, 2).paddedLeft('0', 5) : juce::String(static_cast<int>(rest)).paddedLeft('0', 2));
+    return (negative ? juce::String::fromUTF8("\xE2\x80\x93") : juce::String{}) + value;
+}
+
+std::pair<juce::String, juce::String> crate::titleAndArtist(const juce::File& file) {
+    const auto name = displayTitle(file);
+    const auto dash = name.indexOf(" - ");
+    if (dash > 0) {
+        return {name.substring(dash + 3).trim(), name.substring(0, dash).trim()};
+    }
+    return {name, {}};
+}
+
+crate::Look::Look() {
+    setColour(juce::ResizableWindow::backgroundColourId, background);
+    setColour(juce::TextButton::buttonColourId, control);
+    setColour(juce::TextButton::buttonOnColourId, green);
+    setColour(juce::TextButton::textColourOffId, text);
+    setColour(juce::TextButton::textColourOnId, juce::Colour(0xff0b0c0d));
+    setColour(juce::ComboBox::backgroundColourId, control);
+    setColour(juce::ComboBox::outlineColourId, line);
+    setColour(juce::ComboBox::textColourId, text);
+    setColour(juce::ComboBox::arrowColourId, muted);
+    setColour(juce::PopupMenu::backgroundColourId, panel);
+    setColour(juce::ListBox::backgroundColourId, inset);
+    setColour(juce::TableHeaderComponent::backgroundColourId, panel);
+    setColour(juce::TableHeaderComponent::textColourId, muted);
+    setColour(juce::TableHeaderComponent::outlineColourId, line);
+    setColour(juce::TextEditor::backgroundColourId, inset);
+    setColour(juce::TextEditor::outlineColourId, line);
+    setColour(juce::TextEditor::focusedOutlineColourId, green.withAlpha(0.6f));
+    setColour(juce::Slider::thumbColourId, juce::Colour(0xffd8d8d6));
+    setColour(juce::Slider::trackColourId, green);
+    setColour(juce::Slider::backgroundColourId, juce::Colour(0xff050606));
+    setColour(juce::Slider::textBoxTextColourId, text);
+    setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+    setColour(juce::Label::textColourId, text);
+    setColour(juce::ScrollBar::thumbColourId, juce::Colour(0xff3a3f43));
+}
+
+void crate::Look::drawButtonBackground(juce::Graphics& g, juce::Button& button, const juce::Colour& base,
+        bool over, bool down) {
+    auto bounds = button.getLocalBounds().toFloat().reduced(0.5f);
+    auto fill = button.getToggleState() ? button.findColour(juce::TextButton::buttonOnColourId) : base;
+    if (!button.isEnabled()) {
+        fill = fill.withMultipliedAlpha(0.55f);
+    } else if (down) {
+        fill = fill.brighter(0.25f);
+    } else if (over) {
+        fill = fill.brighter(0.1f);
+    }
+    if (fill.getAlpha() == 0 && !over && !down) {
+        return; // Flat toolbar buttons show only text until hovered.
+    }
+    if (fill.getAlpha() == 0) {
+        fill = juce::Colours::white.withAlpha(down ? 0.12f : 0.07f);
+    }
+    g.setColour(fill);
+    g.fillRoundedRectangle(bounds, 3.0f);
+    if (!button.getToggleState()) {
+        g.setColour(juce::Colours::white.withAlpha(0.06f));
+        g.drawRoundedRectangle(bounds, 3.0f, 1.0f);
+    }
+}
+
+juce::Font crate::Look::getTextButtonFont(juce::TextButton& button, int height) {
+    const float size = button.getProperties().getWithDefault("fontSize", 0.0f);
+    return juce::Font(juce::FontOptions(size > 0 ? size : juce::jmin(13.0f, height * 0.56f), juce::Font::bold));
+}
+
+void crate::Look::drawRotarySlider(juce::Graphics& g, int x, int y, int width, int height, float position,
+        float startAngle, float endAngle, juce::Slider& slider) {
+    const auto bounds = juce::Rectangle<int>(x, y, width, height).toFloat().reduced(2.0f);
+    const float radius = juce::jmin(bounds.getWidth(), bounds.getHeight()) * 0.5f;
+    const auto centre = bounds.getCentre();
+    const auto knob = juce::Rectangle<float>(radius * 2, radius * 2).withCentre(centre);
+    const float angle = startAngle + position * (endAngle - startAngle);
+    juce::Path arc;
+    arc.addCentredArc(centre.x, centre.y, radius - 1, radius - 1, 0, startAngle, endAngle, true);
+    g.setColour(line);
+    g.strokePath(arc, juce::PathStrokeType(2.0f));
+    const auto accent = slider.findColour(juce::Slider::rotarySliderFillColourId);
+    if (accent.getAlpha() > 0 && slider.isEnabled()) {
+        const float mid = startAngle + 0.5f * (endAngle - startAngle);
+        juce::Path value;
+        value.addCentredArc(centre.x, centre.y, radius - 1, radius - 1, 0,
+                std::min(mid, angle), std::max(mid, angle), true);
+        g.setColour(accent);
+        g.strokePath(value, juce::PathStrokeType(2.0f));
+    }
+    const auto body = knob.reduced(radius * 0.22f);
+    g.setGradientFill(juce::ColourGradient(juce::Colour(0xff3b4043), body.getX(), body.getY(),
+            juce::Colour(0xff151719), body.getRight(), body.getBottom(), false));
+    g.fillEllipse(body);
+    g.setColour(juce::Colours::black.withAlpha(0.6f));
+    g.drawEllipse(body, 1.0f);
+    const float inner = body.getWidth() * 0.5f;
+    g.setColour(text);
+    g.drawLine(centre.x + std::sin(angle) * inner * 0.15f, centre.y - std::cos(angle) * inner * 0.15f,
+            centre.x + std::sin(angle) * inner * 0.95f, centre.y - std::cos(angle) * inner * 0.95f, 2.0f);
+}
+
+int crate::Look::getSliderThumbRadius(juce::Slider& slider) {
+    return slider.isHorizontal() ? 8 : 7;
+}
+
+void crate::Look::drawLinearSlider(juce::Graphics& g, int x, int y, int width, int height, float position,
+        float, float, juce::Slider::SliderStyle style, juce::Slider& slider) {
+    if (style == juce::Slider::LinearBar || style == juce::Slider::LinearBarVertical) {
+        LookAndFeel_V4::drawLinearSlider(g, x, y, width, height, position, 0, 0, style, slider);
+        return;
+    }
+    const auto thumb = slider.findColour(juce::Slider::thumbColourId);
+    if (style == juce::Slider::LinearVertical) {
+        const float cx = x + width * 0.5f;
+        g.setColour(juce::Colour(0xff050606));
+        g.fillRoundedRectangle(cx - 2.0f, static_cast<float>(y), 4.0f, static_cast<float>(height), 2.0f);
+        const float capW = juce::jmin(38.0f, width - 2.0f), capH = 14.0f;
+        const auto cap = juce::Rectangle<float>(capW, capH).withCentre({cx, position});
+        g.setGradientFill(juce::ColourGradient(thumb.brighter(0.2f), cap.getX(), cap.getY(),
+                thumb.darker(0.5f), cap.getX(), cap.getBottom(), false));
+        g.fillRoundedRectangle(cap, 2.0f);
+        g.setColour(juce::Colour(0xff1b1d1f));
+        g.drawHorizontalLine(juce::roundToInt(cap.getCentreY()), cap.getX() + 2, cap.getRight() - 2);
+        return;
+    }
+    const float cy = y + height * 0.5f;
+    g.setColour(juce::Colour(0xff050606));
+    g.fillRoundedRectangle(static_cast<float>(x), cy - 2.0f, static_cast<float>(width), 4.0f, 2.0f);
+    if (slider.getProperties().getWithDefault("centreTicks", false)) {
+        g.setColour(muted.withAlpha(0.6f));
+        for (int i = 0; i <= 4; ++i) {
+            const float tx = x + width * i / 4.0f;
+            g.drawVerticalLine(juce::roundToInt(tx), cy - (i == 2 ? 9.0f : 5.0f), cy - 4.0f);
+            g.drawVerticalLine(juce::roundToInt(tx), cy + 4.0f, cy + (i == 2 ? 9.0f : 5.0f));
+        }
+    } else if (slider.isEnabled()) {
+        const auto fill = slider.findColour(juce::Slider::trackColourId);
+        const float zero = slider.getMinimum() < 0 ? x + width * 0.5f : static_cast<float>(x);
+        g.setColour(fill.withAlpha(0.8f));
+        g.fillRect(juce::Rectangle<float>(std::min(zero, position), cy - 1.5f, std::abs(position - zero), 3.0f));
+    }
+    const float capW = slider.getProperties().getWithDefault("wideThumb", false) ? 9.0f : 12.0f;
+    const float capH = juce::jmin(static_cast<float>(height) - 2.0f, 22.0f);
+    const auto cap = juce::Rectangle<float>(capW, capH).withCentre({position, cy});
+    g.setColour(thumb);
+    g.fillRoundedRectangle(cap, 2.0f);
+    g.setColour(juce::Colours::black.withAlpha(0.45f));
+    g.drawVerticalLine(juce::roundToInt(cap.getCentreX()), cap.getY() + 2, cap.getBottom() - 2);
+}
+
+void crate::Look::drawComboBox(juce::Graphics& g, int width, int height, bool, int, int, int, int,
+        juce::ComboBox& box) {
+    const auto bounds = juce::Rectangle<float>(0, 0, static_cast<float>(width), static_cast<float>(height)).reduced(0.5f);
+    g.setColour(box.findColour(juce::ComboBox::backgroundColourId));
+    g.fillRoundedRectangle(bounds, 3.0f);
+    g.setColour(box.findColour(juce::ComboBox::outlineColourId));
+    g.drawRoundedRectangle(bounds, 3.0f, 1.0f);
+    juce::Path arrow;
+    const float ax = width - 13.0f, ay = height * 0.5f;
+    arrow.addTriangle(ax - 4, ay - 2, ax + 4, ay - 2, ax, ay + 3);
+    g.setColour(box.findColour(juce::ComboBox::arrowColourId));
+    g.fillPath(arrow);
+}
+
+juce::Font crate::Look::getComboBoxFont(juce::ComboBox& box) {
+    return juce::Font(juce::FontOptions(juce::jmin(14.0f, box.getHeight() * 0.58f)));
+}
+
+void crate::Look::drawTableHeaderBackground(juce::Graphics& g, juce::TableHeaderComponent& header) {
+    g.fillAll(panel);
+    g.setColour(line);
+    g.drawHorizontalLine(header.getHeight() - 1, 0, static_cast<float>(header.getWidth()));
+}
+
+void crate::Look::drawTableHeaderColumn(juce::Graphics& g, juce::TableHeaderComponent&, const juce::String& name,
+        int, int width, int height, bool over, bool, int flags) {
+    if (over) {
+        g.fillAll(juce::Colours::white.withAlpha(0.04f));
+    }
+    g.setColour(line);
+    g.drawVerticalLine(width - 1, 4.0f, height - 4.0f);
+    g.setColour(muted);
+    g.setFont(juce::FontOptions(12.5f));
+    auto area = juce::Rectangle<int>(width, height).reduced(8, 0);
+    if ((flags & (juce::TableHeaderComponent::sortedForwards | juce::TableHeaderComponent::sortedBackwards)) != 0) {
+        juce::Path arrow;
+        const float ax = area.getRight() - 6.0f, ay = height * 0.5f;
+        if (flags & juce::TableHeaderComponent::sortedForwards) {
+            arrow.addTriangle(ax - 4, ay + 2, ax + 4, ay + 2, ax, ay - 3);
+        } else {
+            arrow.addTriangle(ax - 4, ay - 2, ax + 4, ay - 2, ax, ay + 3);
+        }
+        g.fillPath(arrow);
+        area.removeFromRight(14);
+    }
+    g.drawText(name, area, juce::Justification::centredLeft, true);
+}
+
+namespace {
+// Waveform colour from how bright (treble-heavy) a slice is: bass red, mids orange to yellow, highs green to cyan.
+juce::Colour spectrumColour(float brightness, juce::Colour accent) {
+    static const std::array<juce::Colour, 5> stops{juce::Colour(0xffff2d1c), juce::Colour(0xffff7a14),
+            juce::Colour(0xfff5d31c), juce::Colour(0xff4fe04a), juce::Colour(0xff36c9e8)};
+    const float t = juce::jlimit(0.0f, 0.999f, brightness) * (stops.size() - 1);
+    const auto index = static_cast<std::size_t>(t);
+    const auto colour = stops[index].interpolatedWith(stops[index + 1], t - static_cast<float>(index));
+    return colour.interpolatedWith(accent, 0.18f);
+}
+}
+
 void crate::paintWave(juce::Graphics& g, juce::Rectangle<int> bounds, const DeckEngine::Overview* wave,
-        double playhead, const std::optional<TrackBeatGrid>& grid, bool follow, juce::Colour accent) {
+        double playhead, const std::optional<TrackBeatGrid>& grid, bool follow, juce::Colour accent,
+        const DeckEngine::Markers* markers) {
     if (bounds.isEmpty()) {
         return;
     }
-    g.setColour(inset);
+    g.setColour(juce::Colour(0xff070808));
     g.fillRect(bounds);
-    const auto area = bounds.reduced(2, 2);
-    g.setColour(line);
-    g.drawHorizontalLine(area.getCentreY(), static_cast<float>(area.getX()), static_cast<float>(area.getRight()));
+    const auto area = bounds.reduced(0, 2);
     if (!wave || wave->seconds <= 0) {
+        g.setColour(line);
+        g.drawHorizontalLine(area.getCentreY(), static_cast<float>(area.getX()), static_cast<float>(area.getRight()));
         return;
     }
-    const double span = follow ? std::min(20.0, wave->seconds) : wave->seconds;
-    const double start = follow ? playhead - span * 0.38 : 0;
+    const double span = follow ? std::min(16.0, wave->seconds) : wave->seconds;
+    const double start = follow ? playhead - span * 0.5 : 0;
     const auto at = [&](double second) {
         return static_cast<float>(area.getX() + (second - start) * area.getWidth() / span);
     };
+    juce::Graphics::ScopedSaveState clip(g);
+    g.reduceClipRegion(area);
     if (grid && grid->bpm > 0 && follow) {
         const int first = static_cast<int>(std::ceil(grid->beatAt(start)));
         for (int number = first; ; ++number) {
@@ -114,7 +339,7 @@ void crate::paintWave(juce::Graphics& g, juce::Rectangle<int> bounds, const Deck
                 break;
             }
             if (tick >= 0) {
-                g.setColour(line.withAlpha(number % 4 == 0 ? 0.95f : 0.55f));
+                g.setColour(juce::Colours::white.withAlpha(number % 4 == 0 ? 0.22f : 0.08f));
                 g.drawVerticalLine(juce::roundToInt(at(tick)), static_cast<float>(area.getY()),
                         static_cast<float>(area.getBottom()));
             }
@@ -122,26 +347,83 @@ void crate::paintWave(juce::Graphics& g, juce::Rectangle<int> bounds, const Deck
     }
     const auto total = static_cast<int>(wave->bins.size());
     const double secondsPerBin = wave->seconds / total;
-    const int first = juce::jlimit(0, total, static_cast<int>(start / secondsPerBin));
-    const int last = juce::jlimit(first, total, static_cast<int>(std::ceil((start + span) / secondsPerBin)));
     const auto mid = static_cast<float>(area.getCentreY());
-    juce::Graphics::ScopedSaveState clip(g);
-    g.reduceClipRegion(area);
-    for (int i = first; i < last; ++i) {
-        const auto& bin = wave->bins[static_cast<std::size_t>(i)];
-        const float amplitude = std::min(1.0f, std::sqrt(bin.peak)) * (static_cast<float>(area.getHeight()) * 0.47f);
-        const auto x = at(i * secondsPerBin);
-        const auto width = std::max(1.0f, at((i + 1) * secondsPerBin) - x);
-        g.setColour(accent.interpolatedWith(juce::Colour(0xff78cde0), bin.brightness));
-        g.fillRect(x, mid - amplitude, width, amplitude * 2.0f);
+    const float scale = static_cast<float>(area.getHeight()) * 0.48f;
+    for (int px = area.getX(); px < area.getRight(); ++px) {
+        const double from = start + (px - area.getX()) * span / area.getWidth();
+        const double to = start + (px + 1 - area.getX()) * span / area.getWidth();
+        if (to <= 0 || from >= wave->seconds) {
+            continue;
+        }
+        const int a = juce::jlimit(0, total - 1, static_cast<int>(std::max(0.0, from) / secondsPerBin));
+        const int b = juce::jlimit(a, total - 1, static_cast<int>(std::min(wave->seconds, to) / secondsPerBin));
+        float peak = 0, bright = 0;
+        for (int i = a; i <= b; ++i) {
+            const auto& bin = wave->bins[static_cast<std::size_t>(i)];
+            if (bin.peak >= peak) {
+                peak = bin.peak;
+                bright = bin.brightness;
+            }
+        }
+        const float amplitude = std::min(1.0f, std::sqrt(peak)) * scale;
+        if (amplitude < 0.5f) {
+            continue;
+        }
+        const bool played = !follow && from < playhead;
+        auto colour = spectrumColour(bright, accent);
+        if (played) {
+            colour = colour.withMultipliedSaturation(0.35f).withMultipliedBrightness(0.55f);
+        }
+        g.setColour(colour);
+        g.drawVerticalLine(px, mid - amplitude, mid + amplitude);
+        g.setColour(colour.brighter(0.5f).withAlpha(0.7f));
+        g.drawVerticalLine(px, mid - amplitude * 0.35f, mid + amplitude * 0.35f);
     }
-    g.setColour(text);
-    g.drawVerticalLine(juce::jlimit(area.getX(), area.getRight() - 1, juce::roundToInt(at(playhead))),
-            static_cast<float>(area.getY()), static_cast<float>(area.getBottom()));
+    if (markers) {
+        const auto flag = [&](double seconds, const juce::String& label, juce::Colour colour) {
+            const float x = at(seconds);
+            if (x < area.getX() - 30 || x > area.getRight()) {
+                return;
+            }
+            g.setColour(colour);
+            g.drawVerticalLine(juce::roundToInt(x), static_cast<float>(area.getY()), static_cast<float>(area.getBottom()));
+            g.setFont(juce::FontOptions(10.0f, juce::Font::bold));
+            const int w = juce::jmax(11, juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), label) + 6);
+            g.fillRect(juce::roundToInt(x), area.getY(), w, 13);
+            g.setColour(juce::Colour(0xff0b0c0d));
+            g.drawText(label, juce::roundToInt(x), area.getY(), w, 13, juce::Justification::centred);
+        };
+        for (std::size_t i = 0; i < markers->hotCues.size(); ++i) {
+            if (markers->hotCues[i]) {
+                flag(*markers->hotCues[i], juce::String(i + 1), amber);
+            }
+        }
+        if (markers->cue && follow) {
+            flag(*markers->cue, "CUE", amber);
+        }
+    }
+    const float x = follow ? static_cast<float>(area.getCentreX()) : at(playhead);
+    g.setColour(juce::Colour(0xff4aa8ff));
+    g.fillRect(juce::Rectangle<float>(x - 1.0f, static_cast<float>(bounds.getY()), 2.0f, static_cast<float>(bounds.getHeight())));
+    if (follow) {
+        juce::Path tri;
+        tri.addTriangle(x - 5, static_cast<float>(bounds.getY()), x + 5, static_cast<float>(bounds.getY()), x, bounds.getY() + 6.0f);
+        g.fillPath(tri);
+    }
 }
 
 CrateMixer::CrateMixer(FourDeckMixer& source) : mixer(source) {
     using Control = FourDeckMixer::ChannelControl;
+    const auto knob = [](juce::Slider& slider, const juce::String& title) {
+        slider.setTitle(title);
+        slider.setTooltip(title + ". Double-click to reset.");
+        slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+        slider.setRange(0, 1, 0.001);
+        slider.setValue(0.5, juce::dontSendNotification);
+        slider.setDoubleClickReturnValue(true, 0.5);
+        slider.setRotaryParameters(juce::MathConstants<float>::pi * 1.25f, juce::MathConstants<float>::pi * 2.75f, true);
+    };
     for (std::size_t i = 0; i < faders.size(); ++i) {
         const auto title = "Deck " + juce::String(i + 1);
         faders[i].setTitle(title + " channel fader");
@@ -151,36 +433,65 @@ CrateMixer::CrateMixer(FourDeckMixer& source) : mixer(source) {
         faders[i].onValueChange = [this, i] {
             mixer.setChannelControl(i, Control::fader, static_cast<float>(faders[i].getValue()));
         };
-        filters[i].setTitle(title + " filter");
-        filters[i].setTooltip(title + " filter");
-        filters[i].setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-        filters[i].setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-        filters[i].setRange(0, 1, 0.001);
-        filters[i].setDoubleClickReturnValue(true, 0.5);
+        knob(filters[i], title + " filter");
+        filters[i].setColour(juce::Slider::rotarySliderFillColourId, crate::green);
         filters[i].onValueChange = [this, i] {
             mixer.setChannelControl(i, Control::filter, static_cast<float>(filters[i].getValue()));
         };
-        cues[i].setButtonText("PFL");
+        constexpr std::array bands{Control::high, Control::mid, Control::low};
+        constexpr std::array names{"high", "mid", "low"};
+        for (std::size_t b = 0; b < 3; ++b) {
+            knob(eq[i][b], title + " " + names[b] + " EQ");
+            eq[i][b].setColour(juce::Slider::rotarySliderFillColourId, juce::Colours::transparentBlack);
+            eq[i][b].onValueChange = [this, i, b, control = bands[b]] {
+                mixer.setChannelControl(i, control, static_cast<float>(eq[i][b].getValue()));
+            };
+            addAndMakeVisible(eq[i][b]);
+        }
         cues[i].setTitle(title + " headphone cue");
+        cues[i].setTooltip(title + " headphone cue (PFL)");
+        cues[i].setColour(juce::TextButton::buttonOnColourId, crate::amber);
         cues[i].onClick = [this, i] { mixer.toggleCue(i); refresh(); };
+        stars[i].setButtonText(juce::String::fromUTF8("\xE2\x98\x85"));
+        stars[i].setTitle("Save GOOD MIX into " + title);
+        stars[i].setTooltip("Save a GOOD MIX: this deck's song worked after the other deck's song.");
+        stars[i].setColour(juce::TextButton::buttonColourId, juce::Colour(0xff1f5a23));
+        stars[i].setColour(juce::TextButton::textColourOffId, juce::Colour(0xff9df59d));
+        stars[i].onClick = [this, i] {
+            if (onSaveMix) {
+                onSaveMix(i);
+            }
+        };
         addAndMakeVisible(faders[i]);
         addAndMakeVisible(filters[i]);
         addAndMakeVisible(cues[i]);
+        addChildComponent(stars[i]);
     }
-    for (auto* slider : {&crossfade, &blend}) {
+    for (auto* slider : {&crossfade, &blend, &booth}) {
         slider->setSliderStyle(juce::Slider::LinearHorizontal);
         slider->setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
         addAndMakeVisible(*slider);
     }
     crossfade.setTitle("Crossfader");
-    crossfade.setTooltip("Crossfader");
+    crossfade.setTooltip("Crossfader. Double-click to centre.");
     crossfade.setRange(-1, 1, 0.001);
     crossfade.setDoubleClickReturnValue(true, 0);
+    crossfade.getProperties().set("centreTicks", true);
+    crossfade.setColour(juce::Slider::thumbColourId, crate::amber);
     crossfade.onValueChange = [this] { mixer.setCrossfader(static_cast<float>(crossfade.getValue())); };
     blend.setTitle("Headphone cue to master blend");
-    blend.setTooltip("Blend headphone cue with master");
+    blend.setTooltip("Headphones: cue on the left, master on the right");
     blend.setRange(0, 1, 0.001);
+    blend.getProperties().set("wideThumb", true);
     blend.onValueChange = [this] { mixer.setHeadphoneMix(static_cast<float>(blend.getValue())); };
+    booth.setTitle("Booth level");
+    booth.setTooltip("Booth level for audio outputs 5 and 6.");
+    booth.setRange(0, 1);
+    booth.setValue(1, juce::dontSendNotification);
+    booth.getProperties().set("wideThumb", true);
+    booth.onValueChange = [this] { mixer.setBoothLevel(static_cast<float>(booth.getValue())); };
+    split.setTooltip("Split headphones: cue in the left ear, master in the right");
+    split.getProperties().set("fontSize", 10.0f);
     split.onClick = [this] { mixer.toggleSplitCue(); refresh(); };
     addAndMakeVisible(split);
     setDeckCount(2);
@@ -190,9 +501,14 @@ CrateMixer::CrateMixer(FourDeckMixer& source) : mixer(source) {
 void CrateMixer::setDeckCount(int visible) {
     count = visible;
     for (std::size_t i = 0; i < faders.size(); ++i) {
-        faders[i].setVisible(i < static_cast<std::size_t>(count));
-        filters[i].setVisible(i < static_cast<std::size_t>(count));
-        cues[i].setVisible(i < static_cast<std::size_t>(count));
+        const bool shown = i < static_cast<std::size_t>(count);
+        faders[i].setVisible(shown);
+        filters[i].setVisible(shown);
+        cues[i].setVisible(shown);
+        stars[i].setVisible(shown && count == 2);
+        for (auto& knob : eq[i]) {
+            knob.setVisible(shown);
+        }
     }
     resized();
     repaint();
@@ -208,6 +524,11 @@ void CrateMixer::refresh() {
         if (!filters[i].isMouseButtonDown()) {
             filters[i].setValue(strip.filter, juce::dontSendNotification);
         }
+        for (std::size_t b = 0; b < 3; ++b) {
+            if (!eq[i][b].isMouseButtonDown()) {
+                eq[i][b].setValue(strip.eq[2 - b], juce::dontSendNotification);
+            }
+        }
         cues[i].setToggleState(strip.cue, juce::dontSendNotification);
         peaks[i] = strip.peak;
     }
@@ -222,20 +543,45 @@ void CrateMixer::refresh() {
 }
 
 void CrateMixer::resized() {
-    auto area = getLocalBounds().reduced(9);
-    area.removeFromTop(31);
-    auto monitor = area.removeFromBottom(26);
-    monitor.removeFromLeft(32);
-    split.setBounds(monitor.removeFromRight(48).reduced(1));
-    blend.setBounds(monitor);
-    crossfade.setBounds(area.removeFromBottom(24));
+    auto area = getLocalBounds().reduced(8, 8);
+    auto monitor = area.removeFromBottom(22);
+    const int third = monitor.getWidth() / 3;
+    auto blendArea = monitor.removeFromLeft(third);
+    blendLabel = blendArea.removeFromLeft(30);
+    blend.setBounds(blendArea.reduced(2, 3));
+    split.setBounds(monitor.removeFromLeft(third).reduced(10, 1));
+    boothLabel = monitor.removeFromLeft(38);
+    booth.setBounds(monitor.reduced(2, 3));
+    area.removeFromBottom(4);
+    auto fade = area.removeFromBottom(30);
+    if (count == 2) {
+        stars[0].setBounds(fade.removeFromLeft(30).withSizeKeepingCentre(24, 22));
+        stars[1].setBounds(fade.removeFromRight(30).withSizeKeepingCentre(24, 22));
+    }
+    crossfade.setBounds(fade.reduced(count == 2 ? 14 : 30, 2));
+    area.removeFromBottom(4);
     const int width = area.getWidth() / count;
     for (std::size_t i = 0; i < static_cast<std::size_t>(count); ++i) {
-        auto strip = area.removeFromLeft(width).reduced(3, 0);
-        cues[i].setBounds(strip.removeFromTop(22).withSizeKeepingCentre(juce::jmin(strip.getWidth(), 43), 21));
-        filters[i].setBounds(strip.removeFromBottom(31));
-        auto column = strip.withSizeKeepingCentre(37, strip.getHeight());
-        meters[i] = column.removeFromRight(8).reduced(1, 4);
+        auto strip = area.removeFromLeft(width);
+        const bool knobsLeft = static_cast<int>(i) < count / 2;
+        const int knobWidth = juce::jmin(52, strip.getWidth() * 11 / 20);
+        auto knobs = knobsLeft ? strip.removeFromLeft(knobWidth) : strip.removeFromRight(knobWidth);
+        auto faderColumn = strip;
+        const int size = juce::jlimit(22, 36, (knobs.getHeight() - 20) / 4);
+        const int labelWidth = knobWidth - size > 12 ? 12 : 0;
+        for (std::size_t b = 0; b < 3; ++b) {
+            auto row = knobs.removeFromTop(size + 4);
+            auto label = knobsLeft ? row.removeFromLeft(labelWidth) : row.removeFromRight(labelWidth);
+            eqLabels[i][b] = label;
+            eq[i][b].setBounds(row.withSizeKeepingCentre(size, size));
+        }
+        filterLabels[i] = knobs.removeFromTop(16);
+        filters[i].setBounds(knobs.withSizeKeepingCentre(size + 6, size + 6).withY(filterLabels[i].getBottom()));
+        cues[i].setBounds(faderColumn.removeFromTop(28).withSizeKeepingCentre(juce::jmin(32, faderColumn.getWidth()), 26));
+        faderColumn.removeFromTop(6);
+        auto column = faderColumn.withSizeKeepingCentre(juce::jmin(faderColumn.getWidth(), 46), faderColumn.getHeight());
+        meters[i] = knobsLeft ? column.removeFromLeft(9) : column.removeFromRight(9);
+        meters[i] = meters[i].reduced(1, 6);
         faders[i].setBounds(column);
     }
 }
@@ -244,40 +590,57 @@ void CrateMixer::paint(juce::Graphics& g) {
     g.fillAll(crate::panel);
     g.setColour(crate::line);
     g.drawRect(getLocalBounds());
-    g.setColour(crate::text);
-    g.setFont(juce::FontOptions(13, juce::Font::bold));
-    g.drawText("MIXER", 9, 4, getWidth() - 18, 16, juce::Justification::centred);
-    g.setFont(juce::FontOptions(10));
-    g.setColour(crate::muted);
-    g.drawText("CUE", 9, blend.getY(), 30, blend.getHeight(), juce::Justification::centredLeft);
+    g.setFont(juce::FontOptions(11.5f, juce::Font::bold));
+    constexpr std::array bandNames{"H", "M", "L"};
     for (std::size_t i = 0; i < static_cast<std::size_t>(count); ++i) {
-        auto meter = meters[i];
         g.setColour(crate::muted);
-        g.drawText("D" + juce::String(i + 1), cues[i].getX(), 21, cues[i].getWidth(), 13,
-                juce::Justification::centred);
-        g.setColour(crate::inset);
-        g.fillRect(meter);
+        for (std::size_t b = 0; b < 3; ++b) {
+            g.drawText(bandNames[b], eqLabels[i][b], juce::Justification::centred);
+        }
+        g.drawText(juce::String::fromUTF8("\xE2\x96\xBE Filter"), filterLabels[i], juce::Justification::centred);
+        auto meter = meters[i];
         const auto db = juce::Decibels::gainToDecibels(peaks[i], -54.0f);
         const auto peak = juce::jlimit(0.0f, 1.0f, (db + 54.0f) / 54.0f);
-        const int segments = std::max(1, meter.getHeight() / 5);
+        const int segments = std::max(1, meter.getHeight() / 6);
         for (int s = 0; s < segments; ++s) {
-            const int y = meter.getBottom() - 4 - s * 5;
-            g.setColour(static_cast<float>(s + 1) / static_cast<float>(segments) <= peak
-                    ? (s * 4 > segments * 3 ? crate::amber : crate::green) : crate::line);
-            g.fillRect(meter.getX(), y, meter.getWidth(), 3);
+            const int y = meter.getBottom() - 5 - s * 6;
+            const float level = static_cast<float>(s + 1) / static_cast<float>(segments);
+            const auto lit = level > 0.9f ? juce::Colour(0xffff3b30) : level > 0.72f ? crate::amber : crate::green;
+            g.setColour(level <= peak ? lit : lit.withAlpha(0.13f));
+            g.fillRect(meter.getX(), y, meter.getWidth(), 4);
         }
+    }
+    g.setColour(crate::muted);
+    g.setFont(juce::FontOptions(10.0f, juce::Font::bold));
+    g.drawText("CUE", blendLabel, juce::Justification::centredLeft);
+    g.drawText("BOOTH", boothLabel, juce::Justification::centredLeft);
+}
+
+void CrateMixer::paintOverChildren(juce::Graphics& g) {
+    // Headphone icon on each PFL button.
+    for (std::size_t i = 0; i < static_cast<std::size_t>(count); ++i) {
+        const auto b = cues[i].getBounds().toFloat().withSizeKeepingCentre(15, 14);
+        const bool on = cues[i].getToggleState();
+        g.setColour(on ? juce::Colour(0xff0b0c0d) : crate::text);
+        juce::Path band;
+        band.addCentredArc(b.getCentreX(), b.getCentreY() + 1, 6.5f, 6.5f, 0,
+                -juce::MathConstants<float>::halfPi, juce::MathConstants<float>::halfPi, true);
+        g.strokePath(band, juce::PathStrokeType(1.6f));
+        g.fillRoundedRectangle(b.getX(), b.getCentreY() + 1, 3.5f, 6, 1);
+        g.fillRoundedRectangle(b.getRight() - 3.5f, b.getCentreY() + 1, 3.5f, 6, 1);
     }
 }
 
 CrateEcho::CrateEcho(FourDeckMixer& source) : mixer(source) {
     for (std::size_t i = 0; i < armed.size(); ++i) {
-        const auto name = "D" + juce::String(i + 1);
-        armed[i].setButtonText(name);
+        armed[i].setButtonText("ARM");
         armed[i].setTitle("Arm effect on Deck " + juce::String(i + 1));
         armed[i].setTooltip("Arm the selected effect for this deck or its T7 paddle.");
+        armed[i].setColour(juce::TextButton::buttonOnColourId, crate::green);
         armed[i].onClick = [this, i] { mixer.toggleEchoArmed(i); refresh(); };
         engaged[i].setButtonText("ON");
         engaged[i].setTitle("Engage effect on Deck " + juce::String(i + 1));
+        engaged[i].setColour(juce::TextButton::buttonOnColourId, crate::amber);
         engaged[i].onClick = [this, i] { mixer.toggleEchoEnabled(i); refresh(); };
         addAndMakeVisible(armed[i]);
         addAndMakeVisible(engaged[i]);
@@ -294,11 +657,13 @@ CrateEcho::CrateEcho(FourDeckMixer& source) : mixer(source) {
     division.setTitle("Echo note division");
     division.addItemList({"1/8", "1/4", "1/2"}, 1);
     division.onChange = [this] { mixer.setEchoDivision(division.getSelectedItemIndex()); };
-    depth.setSliderStyle(juce::Slider::LinearHorizontal);
-    depth.setTextBoxStyle(juce::Slider::TextBoxRight, false, 42, 21);
+    depth.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    depth.setRotaryParameters(juce::MathConstants<float>::pi * 1.25f, juce::MathConstants<float>::pi * 2.75f, true);
+    depth.setColour(juce::Slider::rotarySliderFillColourId, crate::green);
+    depth.setTextBoxStyle(juce::Slider::TextBoxRight, true, 40, 20);
     depth.setRange(0, 100, 1);
     depth.setTextValueSuffix("%");
-    depth.setTitle("Echo depth");
+    depth.setTitle("Effect depth");
     depth.onValueChange = [this] { mixer.setEchoDepth(static_cast<float>(depth.getValue() / 100)); };
     addAndMakeVisible(division);
     addAndMakeVisible(depth);
@@ -306,31 +671,46 @@ CrateEcho::CrateEcho(FourDeckMixer& source) : mixer(source) {
     refresh();
 }
 
-void CrateEcho::setDeckCount(int count) {
+void CrateEcho::setDeckCount(int visible) {
+    count = visible;
     for (std::size_t i = 0; i < armed.size(); ++i) {
-        const bool visible = i < static_cast<std::size_t>(count);
-        armed[i].setVisible(visible);
-        engaged[i].setVisible(visible);
-        effects[i].setVisible(visible);
+        const bool shown = i < static_cast<std::size_t>(count);
+        armed[i].setVisible(shown);
+        engaged[i].setVisible(shown);
+        effects[i].setVisible(shown);
     }
     resized();
 }
 
 void CrateEcho::resized() {
-    auto row = getLocalBounds().reduced(8, 4);
-    row.removeFromLeft(37);
-    division.setBounds(row.removeFromLeft(62));
-    row.removeFromLeft(43);
-    depth.setBounds(row.removeFromLeft(115));
-    row.removeFromLeft(10);
-    for (std::size_t i = 0; i < armed.size(); ++i) {
-        if (armed[i].isVisible()) {
-            effects[i].setBounds(row.removeFromLeft(92).reduced(1, 0));
-            armed[i].setBounds(row.removeFromLeft(34).reduced(1, 0));
-            engaged[i].setBounds(row.removeFromLeft(40).reduced(1, 0));
-            row.removeFromLeft(9);
-        }
+    auto row = getLocalBounds().reduced(8, 5);
+    const int centreWidth = 250;
+    const int half = (row.getWidth() - centreWidth) / 2;
+    auto left = row.removeFromLeft(half);
+    centre = row.removeFromLeft(centreWidth);
+    auto right = row;
+    const auto place = [&](std::size_t i, juce::Rectangle<int> group) {
+        groups[i] = group;
+        group.removeFromLeft(34);
+        effects[i].setBounds(group.removeFromLeft(juce::jmin(130, group.getWidth() / 2)).reduced(1, 0));
+        group.removeFromLeft(6);
+        armed[i].setBounds(group.removeFromLeft(46).reduced(1, 0));
+        engaged[i].setBounds(group.removeFromLeft(40).reduced(1, 0));
+    };
+    if (count == 2) {
+        place(0, left);
+        place(1, right);
+    } else {
+        place(0, left.removeFromLeft(left.getWidth() / 2).withTrimmedRight(6));
+        place(1, left);
+        place(2, right.removeFromLeft(right.getWidth() / 2).withTrimmedRight(6));
+        place(3, right);
     }
+    auto c = centre.reduced(10, 0);
+    c.removeFromLeft(40);
+    division.setBounds(c.removeFromLeft(62));
+    c.removeFromLeft(54);
+    depth.setBounds(c.removeFromLeft(78));
 }
 
 void CrateEcho::refresh() {
@@ -351,11 +731,20 @@ void CrateEcho::paint(juce::Graphics& g) {
     g.fillAll(crate::panel);
     g.setColour(crate::line);
     g.drawRect(getLocalBounds());
-    g.setColour(crate::text);
-    g.setFont(juce::FontOptions(12, juce::Font::bold));
-    g.drawText("FX", 10, 0, 60, getHeight(), juce::Justification::centredLeft);
+    g.drawVerticalLine(centre.getX(), 0, static_cast<float>(getHeight()));
+    g.drawVerticalLine(centre.getRight(), 0, static_cast<float>(getHeight()));
+    g.setFont(juce::FontOptions(13.0f, juce::Font::bold));
+    for (std::size_t i = 0; i < static_cast<std::size_t>(count); ++i) {
+        g.setColour(crate::muted);
+        g.drawText("FX" + juce::String(count == 2 ? "" : juce::String(i + 1)) + ":", groups[i].withWidth(34),
+                juce::Justification::centredLeft);
+    }
+    g.setFont(juce::FontOptions(11.5f, juce::Font::bold));
     g.setColour(crate::muted);
-    g.drawText("Depth", division.getRight() + 7, 0, 40, getHeight(), juce::Justification::centredLeft);
+    auto c = centre.reduced(10, 0);
+    g.drawText("BEAT", c.removeFromLeft(40), juce::Justification::centredLeft);
+    c.removeFromLeft(62);
+    g.drawText("DEPTH", c.removeFromLeft(54).withTrimmedLeft(8), juce::Justification::centredLeft);
 }
 
 CrateLibrary::CrateLibrary(const juce::File& metadataDirectory)
@@ -369,52 +758,77 @@ CrateLibrary::CrateLibrary(const juce::File& metadataDirectory)
     }
     saveMix.setTooltip("Choose two loaded decks in transition order.");
     saveMix.onClick = [this] { chooseMixToSave(); };
-    addAndMakeVisible(saveMix);
+    addChildComponent(saveMix);
     relink.setTitle("Relink missing audio");
     relink.setTooltip("Select audio files named Artist - Title for saved mixes.");
     relink.onClick = [this] { chooseAudioToRelink(); };
-    addAndMakeVisible(relink);
+    addChildComponent(relink);
+    mixMenu.setButtonText(juce::String::fromUTF8("\xE2\x98\xB0"));
+    mixMenu.setTitle("GOOD MIXX menu");
+    mixMenu.setTooltip("Save a mix or relink missing audio");
+    mixMenu.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+    mixMenu.getProperties().set("fontSize", 18.0f);
+    mixMenu.onClick = [this] { showMixMenu(); };
+    addAndMakeVisible(mixMenu);
+    addMenu.setTooltip("Add audio files or import playlists and libraries");
+    addMenu.getProperties().set("fontSize", 11.0f);
+    addMenu.onClick = [this] { showAddMenu(); };
+    addAndMakeVisible(addMenu);
+    sidebarList.setRowHeight(21);
+    sidebarList.setColour(juce::ListBox::backgroundColourId, crate::panel);
+    sidebarList.setTitle("CRATE folders");
+    addAndMakeVisible(sidebarList);
     for (auto* label : {&mixStatus, &saveStatus}) {
         label->setFont(juce::FontOptions(11.5f));
         label->setColour(juce::Label::textColourId, crate::muted);
         addAndMakeVisible(*label);
     }
+    mixStatus.setFont(juce::FontOptions(16.0f));
+    mixStatus.setColour(juce::Label::textColourId, crate::text);
     mixList.setTitle("GOOD MIXX next tracks");
-    mixList.setRowHeight(52);
+    mixList.setRowHeight(72);
     mixList.setColour(juce::ListBox::backgroundColourId, crate::panel);
     addAndMakeVisible(mixList);
-    search.setTextToShowWhenEmpty("Search CRATE tracks", crate::muted);
+    search.setTextToShowWhenEmpty("Search Library...", crate::muted);
+    search.setFont(juce::FontOptions(14.0f));
+    search.setIndents(8, 6);
     search.setTitle("Search library");
     search.onTextChange = [this] { filter(); };
     add.onClick = [this] { browse(); };
     addAndMakeVisible(search);
-    addAndMakeVisible(add);
+    addChildComponent(add);
     importPlaylist.onClick = [this] { browsePlaylist(); };
-    addAndMakeVisible(importPlaylist);
+    addChildComponent(importPlaylist);
     importOneLibrary.onClick = [this] { browseOneLibrary(); };
-    addAndMakeVisible(importOneLibrary);
+    addChildComponent(importOneLibrary);
     importMixxx.setTooltip("Copy your existing Spin Deck library into CRATE.");
     importMixxx.onClick = [this] { browseMixxx(); };
-    addAndMakeVisible(importMixxx);
+    addChildComponent(importMixxx);
     playlistPicker.setTitle("CRATE playlist");
-    playlistPicker.onChange = [this] { filter(); };
-    addAndMakeVisible(playlistPicker);
+    playlistPicker.onChange = [this] { filter(); sidebarList.repaint(); };
+    addChildComponent(playlistPicker);
     playlistStatus.setFont(juce::FontOptions(11.5f));
     playlistStatus.setColour(juce::Label::textColourId, crate::muted);
     addAndMakeVisible(playlistStatus);
     playlists = libraryStore.loadPlaylists();
     refreshPlaylistPicker();
     table.setModel(this);
-    table.setRowHeight(24);
-    table.setHeaderHeight(25);
-    table.getHeader().addColumn("TRACK", 1, 285, 120, -1, juce::TableHeaderComponent::visible);
-    table.getHeader().addColumn("BPM", 2, 74, 55, -1, juce::TableHeaderComponent::visible);
-    table.getHeader().addColumn("TIME", 3, 70, 55, -1, juce::TableHeaderComponent::visible);
-    table.getHeader().addColumn("KEY", 4, 60, 44, -1, juce::TableHeaderComponent::visible);
+    table.setRowHeight(20);
+    table.setHeaderHeight(24);
+    table.setColour(juce::ListBox::backgroundColourId, crate::inset);
+    const auto fixed = juce::TableHeaderComponent::visible | juce::TableHeaderComponent::resizable;
+    table.getHeader().addColumn("#", 5, 42, 30, 60, fixed);
+    table.getHeader().addColumn("Title", 1, 330, 120, -1, fixed);
+    table.getHeader().addColumn("Artist", 6, 230, 90, -1, fixed);
+    table.getHeader().addColumn("Key", 4, 70, 50, 120, fixed);
+    table.getHeader().addColumn("BPM", 2, 70, 50, 100, fixed);
+    table.getHeader().addColumn("Duration", 3, 82, 60, 120, fixed);
     table.setTitle("CRATE tracks");
     addAndMakeVisible(table);
     for (std::size_t i = 0; i < route.size(); ++i) {
-        route[i].setButtonText("LOAD " + juce::String(i + 1));
+        route[i].setButtonText(juce::String(i + 1));
+        route[i].setTitle("Load selected track on Deck " + juce::String(i + 1));
+        route[i].setTooltip("Load the selected track on Deck " + juce::String(i + 1));
         route[i].onClick = [this, i] {
             loadSelected(static_cast<int>(i));
         };
@@ -567,27 +981,44 @@ void CrateLibrary::MixList::paintListBoxItem(
         return;
     }
     const auto& mix = rows[static_cast<std::size_t>(row)];
-    const auto card = juce::Rectangle<int>(width, height).withTrimmedBottom(3);
-    g.setColour(selected ? juce::Colour(0xff284437) : crate::inset);
-    g.fillRect(card);
-    g.setColour(crate::line);
-    g.drawRect(card);
-    auto bounds = card.reduced(7, 3);
-    g.setFont(juce::FontOptions(11.5f));
-    if (mix.outgoing.isNotEmpty()) {
-        g.setColour(crate::muted);
-        g.drawText(mix.outgoing, bounds.removeFromTop(13), juce::Justification::centredLeft, true);
-    }
+    const auto card = juce::Rectangle<int>(width, height).withTrimmedBottom(6).toFloat().reduced(1.0f);
+    g.setColour(selected ? juce::Colour(0xff1f2a24) : juce::Colour(0xff1d2022));
+    g.fillRoundedRectangle(card, 4.0f);
+    g.setColour(row == 0 ? crate::green : crate::line);
+    g.drawRoundedRectangle(card, 4.0f, row == 0 ? 2.0f : 1.0f);
+    auto bounds = card.toNearestInt().reduced(10, 6);
+    auto icon = bounds.removeFromLeft(22);
+    juce::Path play;
+    const float cy = static_cast<float>(icon.getY() + 12);
+    play.addTriangle(static_cast<float>(icon.getX()), cy - 7, static_cast<float>(icon.getX()), cy + 7,
+            icon.getX() + 12.0f, cy);
     g.setColour(crate::text);
-    g.setFont(juce::FontOptions(12.5f, juce::Font::bold));
-    g.drawText(mix.outgoing.isEmpty() ? mix.title : juce::String::fromUTF8("→ ") + mix.title,
-            bounds.removeFromTop(16), juce::Justification::centredLeft, true);
-    g.setColour(mix.proven ? crate::amber : crate::green);
-    g.setFont(juce::FontOptions(11));
+    g.fillPath(play);
+    bounds.removeFromLeft(6);
+    const auto [title, artistName] = crate::titleAndArtist(mix.file != juce::File{} ? mix.file
+                                                                                    : juce::File("/" + mix.title));
+    const auto shownTitle = mix.title.contains(" - ") ? title : mix.title;
+    g.setFont(juce::FontOptions(15.5f, juce::Font::bold));
+    g.drawText(shownTitle, bounds.removeFromTop(19), juce::Justification::centredLeft, true);
+    g.setColour(crate::muted);
+    g.setFont(juce::FontOptions(13.0f));
+    const auto subtitle = mix.outgoing.isNotEmpty() ? juce::String::fromUTF8("after ") + mix.outgoing : artistName;
+    g.drawText(subtitle, bounds.removeFromTop(17), juce::Justification::centredLeft, true);
     if (mix.deck >= 0) {
-        bounds.removeFromRight(47);
+        bounds.removeFromRight(66);
     }
+    g.setColour(mix.proven ? crate::amber : crate::text.withAlpha(0.85f));
     g.drawText(mix.details, bounds, juce::Justification::centredLeft, true);
+    if (mix.proven) {
+        // A green "proven" tag in the top-right corner.
+        auto tag = card.toNearestInt().reduced(8, 7).removeFromTop(18);
+        tag = tag.removeFromRight(62);
+        g.setColour(crate::green);
+        g.fillRoundedRectangle(tag.toFloat(), 3.0f);
+        g.setColour(juce::Colour(0xff08110a));
+        g.setFont(juce::FontOptions(11.0f, juce::Font::bold));
+        g.drawText("Proven", tag, juce::Justification::centred);
+    }
 }
 
 juce::Component* CrateLibrary::MixList::refreshComponentForRow(
@@ -604,7 +1035,7 @@ juce::Component* CrateLibrary::MixList::refreshComponentForRow(
         control = std::make_unique<MixLoadControl>();
     }
     if (mix.outgoingDeck >= 0) {
-        control->button.setButtonText("RECALL");
+        control->button.setButtonText("Recall");
         control->button.setTitle("Recall mix into " + mix.title);
         control->button.setTooltip("Prepare the saved loop, cue and sync settings on paused decks.");
         control->button.onClick = [this, mix] {
@@ -615,7 +1046,7 @@ juce::Component* CrateLibrary::MixList::refreshComponentForRow(
         return control.release();
     }
     control->button.setTooltip({});
-    control->button.setButtonText("D" + juce::String(mix.deck + 1));
+    control->button.setButtonText("Load " + juce::String(mix.deck + 1));
     control->button.setTitle("Load " + displayTitle(mix.file) + " on Deck " + juce::String(mix.deck + 1));
     control->button.onClick = [this, file = mix.file, deck = mix.deck] {
         if (owner.onLoadSuggested) {
@@ -1052,7 +1483,10 @@ void CrateLibrary::updateMixes() {
             }
         }
     }
-    mixStatus.setText(status, juce::dontSendNotification);
+    mixStatus.setText(rows.empty() ? status
+                    : juce::String(source == visibleEnd ? "Saved Mixes (" : "Next Tracks (") +
+                            juce::String(static_cast<int>(rows.size())) + ")",
+            juce::dontSendNotification);
     mixModel.rows = std::move(rows);
     mixList.updateContent();
     if (mixSource != sourceFile) {
@@ -1345,55 +1779,143 @@ juce::String CrateLibrary::getCellTooltip(int row, int) {
 }
 
 void CrateLibrary::paintRowBackground(juce::Graphics& g, int row, int, int, bool selected) {
-    g.fillAll(selected ? juce::Colour(0xff284437) : (row % 2 ? crate::panel : crate::inset));
+    g.fillAll(selected ? juce::Colour(0xff2a4a33) : (row % 2 ? juce::Colour(0xff121416) : crate::inset));
 }
 
-void CrateLibrary::paintCell(juce::Graphics& g, int row, int column, int width, int height, bool) {
+void CrateLibrary::paintCell(juce::Graphics& g, int row, int column, int width, int height, bool selected) {
     if (!juce::isPositiveAndBelow(row, getNumRows())) {
         return;
     }
     const auto& entry = tracks[results[static_cast<std::size_t>(row)]];
     const auto seconds = static_cast<int>(entry.seconds);
-    const juce::String value = column == 1 ? displayTitle(entry.file)
-            : column == 2 && entry.bpm ? juce::String(*entry.bpm, 2)
-            : column == 4 && entry.key ? camelotKey(*entry.key)
+    const auto [title, artistName] = crate::titleAndArtist(entry.file);
+    const bool loaded = std::any_of(context.decks.begin(), context.decks.end(),
+            [&](const auto& deck) { return deck.file != juce::File{} && sameSessionTrack(deck.file, entry.file); });
+    g.setFont(juce::FontOptions(13.5f, column == 1 && loaded ? juce::Font::bold : juce::Font::plain));
+    if (column == 4 && entry.key) {
+        const int number = camelotKey(*entry.key).getIntValue();
+        g.setColour(juce::Colour::fromHSV(static_cast<float>((number + 7) % 12) / 12.0f, 0.75f, 0.95f, 1.0f));
+        g.fillRect(6, 4, 3, height - 8);
+        g.setColour(crate::text);
+        g.drawText(crate::keyName(*entry.key), 14, 0, width - 16, height, juce::Justification::centredLeft, true);
+        return;
+    }
+    const juce::String value = column == 5 ? juce::String(row + 1)
+            : column == 1 ? title
+            : column == 6 ? artistName
+            : column == 2 && entry.bpm ? juce::String(*entry.bpm, 1)
             : column == 3 && seconds > 0 ? juce::String(seconds / 60) + ":" +
                     juce::String(seconds % 60).paddedLeft('0', 2) : juce::String{};
-    g.setColour(column == 1 && entry.available ? crate::text : crate::muted);
-    g.setFont(juce::FontOptions(13));
-    g.drawText(value, 8, 0, width - 13, height, juce::Justification::centredLeft, true);
+    g.setColour(!entry.available ? crate::muted.withAlpha(0.6f)
+            : (column == 1 || column == 6 || selected) ? crate::text : crate::text.withAlpha(0.85f));
+    g.drawText(value, 8, 0, width - 12, height, juce::Justification::centredLeft, true);
+}
+
+int CrateLibrary::Sidebar::getNumRows() {
+    return 3 + static_cast<int>(owner.playlists.size());
+}
+
+int CrateLibrary::Sidebar::playlistFor(int row) const {
+    return row == 1 ? -1 : row >= 3 ? row - 3 : -2;
+}
+
+juce::String CrateLibrary::Sidebar::getNameForRow(int row) {
+    const int playlist = playlistFor(row);
+    return playlist == -1 ? juce::String("Library")
+            : playlist >= 0 ? owner.playlists[static_cast<std::size_t>(playlist)].name
+            : row == 0 ? juce::String("Crate OS") : juce::String("Playlists");
+}
+
+void CrateLibrary::Sidebar::paintListBoxItem(int row, juce::Graphics& g, int width, int height, bool) {
+    const int playlist = playlistFor(row);
+    const int selectedId = owner.playlistPicker.getSelectedId();
+    const bool current = (playlist == -1 && selectedId == 1) || (playlist >= 0 && selectedId == playlist + 2);
+    if (current) {
+        g.setColour(juce::Colour(0xff253a4f));
+        g.fillRoundedRectangle(4, 1, static_cast<float>(width - 8), static_cast<float>(height - 2), 3);
+    }
+    if (playlist == -2) {
+        // Heading row with an open-folder arrow and an icon.
+        g.setColour(crate::muted);
+        juce::Path arrow;
+        arrow.addTriangle(8, height * 0.5f - 3, 16, height * 0.5f - 3, 12, height * 0.5f + 3);
+        g.fillPath(arrow);
+        g.setColour(row == 0 ? crate::amber : juce::Colour(0xfff2a640));
+        g.fillRoundedRectangle(22, height * 0.5f - 6, 14, 11, 2);
+        g.setColour(crate::text);
+        g.setFont(juce::FontOptions(14.5f));
+        g.drawText(getNameForRow(row), 42, 0, width - 46, height, juce::Justification::centredLeft, true);
+        return;
+    }
+    g.setColour(crate::muted);
+    g.drawRect(40, height / 2 - 5, 12, 10, 1);
+    const auto count = playlist == -1 ? static_cast<int>(owner.tracks.size())
+                                      : static_cast<int>(owner.playlists[static_cast<std::size_t>(playlist)].files.size());
+    g.setColour(crate::text);
+    g.setFont(juce::FontOptions(13.5f));
+    g.drawText(getNameForRow(row) + " (" + juce::String(count) + ")", 58, 0, width - 62, height,
+            juce::Justification::centredLeft, true);
+}
+
+void CrateLibrary::Sidebar::listBoxItemClicked(int row, const juce::MouseEvent&) {
+    const int playlist = playlistFor(row);
+    if (playlist == -2) {
+        return;
+    }
+    owner.playlistPicker.setSelectedId(playlist == -1 ? 1 : playlist + 2, juce::sendNotificationSync);
+}
+
+void CrateLibrary::showAddMenu() {
+    juce::PopupMenu menu;
+    menu.addItem("Add audio files...", [this] { browse(); });
+    menu.addSeparator();
+    menu.addItem("Import Crate OS playlist (M3U)...", [this] { browsePlaylist(); });
+    menu.addItem("Import djay OneLibrary...", [this] { browseOneLibrary(); });
+    menu.addItem("Import Spin Deck library...", importMixxx.isEnabled(), false, [this] { browseMixxx(); });
+    menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(addMenu));
+}
+
+void CrateLibrary::showMixMenu() {
+    juce::PopupMenu menu;
+    menu.addItem("Save mix...", saveMix.isEnabled(), false, [this] { chooseMixToSave(); });
+    menu.addItem("Relink missing audio...", [this] { chooseAudioToRelink(); });
+    menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(mixMenu));
 }
 
 void CrateLibrary::resized() {
-    auto area = getLocalBounds().reduced(1);
-    sidebar = area.removeFromLeft(148);
-    auto playlistTools = sidebar.reduced(12, 11);
-    playlistTools.removeFromTop(28);
-    playlistPicker.setBounds(playlistTools.removeFromTop(26));
-    playlistTools.removeFromTop(4);
-    importPlaylist.setBounds(playlistTools.removeFromTop(24));
-    playlistTools.removeFromTop(4);
-    importOneLibrary.setBounds(playlistTools.removeFromTop(24));
-    playlistTools.removeFromTop(4);
-    importMixxx.setBounds(playlistTools.removeFromTop(24));
-    playlistStatus.setBounds(playlistTools.removeFromTop(23));
-    mixPanel = area.removeFromRight(202);
-    auto tools = area.removeFromTop(35).reduced(5, 3);
-    for (auto it = route.rbegin(); it != route.rend(); ++it) {
-        if (it->isVisible()) {
-            it->setBounds(tools.removeFromRight(63).reduced(2, 1));
+    auto area = getLocalBounds();
+    sidebar = area.removeFromLeft(228);
+    auto side = sidebar.reduced(8, 8);
+    search.setBounds(side.removeFromTop(28));
+    side.removeFromTop(6);
+    auto bottom = side.removeFromBottom(26);
+    const int visibleRoutes = static_cast<int>(std::count_if(route.begin(), route.end(),
+            [](const auto& button) { return button.isVisible(); }));
+    auto loadRow = bottom.removeFromRight(28 * visibleRoutes);
+    for (auto& button : route) {
+        if (button.isVisible()) {
+            button.setBounds(loadRow.removeFromLeft(28).reduced(1, 1));
         }
     }
-    add.setBounds(tools.removeFromRight(82).reduced(2, 1));
-    search.setBounds(tools.reduced(3, 1));
+    addMenu.setBounds(bottom.withTrimmedRight(6).reduced(0, 1));
+    side.removeFromBottom(4);
+    playlistStatus.setBounds(playlistStatus.getText().isEmpty() ? juce::Rectangle<int>{} : side.removeFromBottom(18));
+    sidebarList.setBounds(side);
+    sidebarList.updateContent();
+
+    mixPanel = area.removeFromRight(296);
     table.setBounds(area);
-    table.getHeader().setColumnWidth(1, juce::jmax(120, area.getWidth() - 224));
-    auto mixes = mixPanel.reduced(9, 7);
-    saveMix.setBounds(mixes.removeFromTop(24).removeFromRight(61).reduced(0, 1));
-    auto status = mixes.removeFromTop(22);
-    relink.setBounds(status.removeFromRight(61).reduced(0, 1));
+    const int flexible = juce::jmax(220, area.getWidth() - 42 - 70 - 70 - 82 - 18);
+    table.getHeader().setColumnWidth(1, flexible * 3 / 5);
+    table.getHeader().setColumnWidth(6, flexible * 2 / 5);
+
+    auto mixes = mixPanel.reduced(8, 6);
+    mixHeader = mixes.removeFromTop(32);
+    mixMenu.setBounds(mixHeader.withTrimmedLeft(mixHeader.getWidth() - 32).reduced(1, 3));
+    auto status = mixes.removeFromTop(26);
     mixStatus.setBounds(status);
     saveStatus.setBounds(saveStatus.getText().isEmpty() ? juce::Rectangle<int>{} : mixes.removeFromTop(18));
+    mixes.removeFromTop(2);
     mixList.setBounds(mixes);
 }
 
@@ -1403,14 +1925,9 @@ void CrateLibrary::paint(juce::Graphics& g) {
     g.drawRect(getLocalBounds());
     g.drawVerticalLine(sidebar.getRight(), 0, static_cast<float>(getHeight()));
     g.drawVerticalLine(mixPanel.getX(), 0, static_cast<float>(getHeight()));
-    auto side = sidebar.reduced(12, 11);
     g.setColour(crate::text);
-    g.setFont(crate::brandFont(17));
-    g.drawText("Crate OS", side.removeFromTop(21), juce::Justification::centredLeft);
-    auto right = mixPanel.reduced(12, 11);
-    g.setColour(crate::text);
-    g.setFont(crate::brandFont(17));
-    g.drawText(juce::String::fromUTF8("GOOD MIXX\xE2\x84\xA2"), right.removeFromTop(21),
+    g.setFont(crate::brandFont(22));
+    g.drawText(juce::String::fromUTF8("GOOD MIXX\xE2\x84\xA2"), mixHeader.withTrimmedLeft(4),
             juce::Justification::centredLeft);
 }
 

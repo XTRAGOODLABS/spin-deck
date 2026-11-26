@@ -157,6 +157,16 @@ double FourDeckMixer::deckSpeed(std::size_t index, bool clockRunning) const {
             ? decks[leader]->localTempo() * manualSpeed(leader) / deck.localTempo() : manualSpeed(index);
 }
 
+std::optional<double> FourDeckMixer::playingTempo(std::size_t index) const {
+    const std::lock_guard lock(mutex);
+    const auto& deck = *decks.at(index);
+    if (!deck.grid) {
+        return {};
+    }
+    const auto& clock = *decks[leader];
+    return deck.localTempo() * deckSpeed(index, clock.playing && clock.grid.has_value());
+}
+
 T7MotorState FourDeckMixer::motorState(std::size_t index) const {
     if (!t7Connected || deviceRate <= 0 || index >= platters.size()) {
         return {};
@@ -246,10 +256,13 @@ void FourDeckMixer::setChannelControl(std::size_t index, ChannelControl control,
         case ChannelControl::trim:
             channel.trim = juce::Decibels::decibelsToGain(bipolar * 12);
             break;
-        default:
-            channel.eq[static_cast<int>(control) - static_cast<int>(ChannelControl::low)] =
+        default: {
+            const auto band = static_cast<std::size_t>(static_cast<int>(control) - static_cast<int>(ChannelControl::low));
+            channel.eq[band] =
                     bipolar <= -0.99f ? 0 : juce::Decibels::decibelsToGain(bipolar * (bipolar < 0 ? 24 : 6));
+            channel.eqPosition[band] = position;
             break;
+        }
     }
 }
 
@@ -499,7 +512,7 @@ FourDeckMixer::MixControls FourDeckMixer::mixControls() const {
     MixControls result{{}, crossfader, headphoneMix, splitCue};
     for (std::size_t i = 0; i < channels.size(); ++i) {
         const auto& channel = channels[i];
-        result.strips[i] = {channel.fader, (1 + channel.filter) * 0.5f, channel.peak, channel.cue};
+        result.strips[i] = {channel.fader, (1 + channel.filter) * 0.5f, channel.peak, channel.cue, channel.eqPosition};
     }
     return result;
 }
