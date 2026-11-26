@@ -1,0 +1,116 @@
+#pragma once
+
+#include <JuceHeader.h>
+
+#include "audio/FourDeckMixer.h"
+#include "control/T7Midi.h"
+#include "CrateViews.h"
+
+#include <array>
+
+namespace spindeck {
+
+class DeckPanel final : public juce::Component, private juce::Timer {
+  public:
+    DeckPanel(std::size_t deckIndex, FourDeckMixer& mixer);
+    ~DeckPanel() override;
+    void loadFile(const juce::File&, std::optional<DeckEngine::MixPoint> point = {},
+            std::function<void()> onSuccess = {});
+    bool isLoading() const { return loading; }
+    std::function<void(const juce::File&, std::optional<double>, double)> onTrackLoaded;
+    void paintWaveLane(juce::Graphics&, juce::Rectangle<int>) const;
+    void paint(juce::Graphics& graphics) override;
+    void resized() override;
+
+  private:
+    void chooseFile();
+    void togglePlayback();
+    void timerCallback() override;
+
+    std::size_t deckIndex;
+    FourDeckMixer& mixer;
+    DeckEngine& engine;
+    DeckEngine::Overview overview;
+    juce::Rectangle<int> overviewBounds;
+    bool loading = false;
+    juce::Label title;
+    juce::Label track;
+    juce::Label gridStatus;
+    juce::TextButton load{"LOAD"};
+    juce::TextButton play{"PLAY"};
+    juce::Slider gain, pitch;
+    juce::ComboBox tempoRange;
+    juce::TextButton deckKey{"KEY"};
+    juce::Slider position;
+    juce::Slider bpm;
+    juce::TextButton anchor{"SET BEAT 1"};
+    juce::TextButton leader{"LEADER"};
+    juce::TextButton sync{"SYNC"};
+    juce::TextButton keyLock{"KEY LOCK"};
+    juce::ComboBox loopLength;
+    juce::TextButton loop{"LOOP"};
+    juce::TextButton savedLoops{"SAVED LOOPS"};
+    juce::TextButton loopIn{"IN"};
+    juce::TextButton loopOut{"OUT"};
+    juce::TextButton quantize{"QUANTIZE"};
+    juce::TextButton jumpBack{"<"};
+    juce::ComboBox jumpLength;
+    juce::TextButton jumpForward{">"};
+    juce::ComboBox rollLength;
+    juce::TextButton roll{"ROLL"};
+    bool rollButtonDown = false;
+    std::array<juce::TextButton, 8> cues;
+    std::array<juce::TextButton, 4> stemButtons;
+    juce::ThreadPool decoder{1};
+    std::unique_ptr<juce::FileChooser> chooser;
+};
+
+class StemQueueWindow;
+
+class MainComponent final : public juce::AudioAppComponent, private juce::Timer {
+  public:
+    MainComponent();
+    ~MainComponent() override;
+
+    void pauseStemQueue(std::function<void()> onPaused);
+    void prepareToPlay(int samplesPerBlockExpected, double sampleRate) override;
+    void getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferToFill) override;
+    void releaseResources() override;
+    void paint(juce::Graphics& graphics) override;
+    void resized() override;
+
+  private:
+    void showAudioSettings();
+    void rememberT7AudioTiming();
+    void chooseSampler(std::size_t);
+    void setDeckCount(int);
+    void timerCallback() override;
+    FourDeckMixer mixer;
+    T7Midi t7;
+    juce::LookAndFeel_V4 crateLook;
+    CrateMixer mixerView;
+    CrateEcho echoView;
+    CrateLibrary library;
+    juce::TextButton twoDecks{"2 DECKS"}, fourDecks{"4 DECKS"};
+    juce::Rectangle<int> waveformArea;
+    int deckCount = 2;
+    int suggestionTicks = 0;
+    std::array<std::unique_ptr<DeckPanel>, 4> panels;
+    juce::Label buildLabel;
+    juce::TextButton makeStemsButton{"MAKE STEMS"};
+    std::unique_ptr<StemQueueWindow> stemQueue;
+    juce::TextButton t7Button{"ENABLE T7"};
+    juce::TextButton audioSettings{"AUDIO"};
+    double t7SampleRate = 0;
+    int t7BufferSize = 0;
+    juce::TextButton record{"RECORD"};
+    juce::Slider booth;
+    juce::Label boothLabel;
+    std::array<juce::TextButton, 8> samplePads;
+    std::unique_ptr<juce::FileChooser> samplerChooser;
+    juce::ThreadPool samplerLoader{1};
+    std::unique_ptr<juce::FileChooser> recordingChooser;
+    juce::Component::SafePointer<juce::DialogWindow> audioSettingsWindow;
+};
+
+}
