@@ -768,13 +768,22 @@ CrateEcho::CrateEcho(FourDeckMixer& source) : mixer(source) {
     for (std::size_t i = 0; i < armed.size(); ++i) {
         armed[i].setButtonText("ARM");
         armed[i].setTitle("Arm effect on Deck " + juce::String(i + 1));
-        armed[i].setTooltip("Arm the selected effect for this deck or its T7 paddle.");
+        armed[i].setTooltip("Get the effect ready for the T7 paddle: pull the paddle to play it. ON plays it without the paddle.");
         armed[i].setColour(juce::TextButton::buttonOnColourId, crate::green);
         armed[i].onClick = [this, i] { mixer.toggleEchoArmed(i); refresh(); };
         engaged[i].setButtonText("ON");
         engaged[i].setTitle("Engage effect on Deck " + juce::String(i + 1));
         engaged[i].setColour(juce::TextButton::buttonOnColourId, crate::amber);
-        engaged[i].onClick = [this, i] { mixer.toggleEchoEnabled(i); refresh(); };
+        engaged[i].setTooltip("Turn the chosen effect on or off for this deck. Stems with FX lit get the effect; "
+                              "with no stem FX lit, the whole deck does.");
+        engaged[i].onClick = [this, i] {
+            // ON works in one click: it arms the effect first when needed.
+            if (!mixer.echoControls().strips[i].armed) {
+                mixer.toggleEchoArmed(i);
+            }
+            mixer.toggleEchoEnabled(i);
+            refresh();
+        };
         addAndMakeVisible(armed[i]);
         addAndMakeVisible(engaged[i]);
         effects[i].setTitle("Effect for Deck " + juce::String(i + 1));
@@ -851,7 +860,7 @@ void CrateEcho::refresh() {
     for (std::size_t i = 0; i < armed.size(); ++i) {
         effects[i].setSelectedItemIndex(static_cast<int>(echo.strips[i].effect), juce::dontSendNotification);
         armed[i].setToggleState(echo.strips[i].armed, juce::dontSendNotification);
-        engaged[i].setEnabled(echo.strips[i].armed);
+        engaged[i].setEnabled(true);
         engaged[i].setToggleState(echo.strips[i].active, juce::dontSendNotification);
     }
     division.setSelectedItemIndex(echo.division, juce::dontSendNotification);
