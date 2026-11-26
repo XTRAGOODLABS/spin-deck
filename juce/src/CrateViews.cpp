@@ -987,14 +987,7 @@ CrateLibrary::CrateLibrary(const juce::File& metadataDirectory)
                 persistTrack(track);
             }
         }
-        const auto cachedTags = libraryStore.loadTags();
-        for (auto& track : tracks) {
-            const auto found = cachedTags.find(track.file.getFullPathName());
-            if (found != cachedTags.end() && found->second.first == track.modifiedMs) {
-                track.tags = found->second.second;
-                track.tagsRead = true;
-            }
-        }
+        applySavedTags();
         filter();
         startTagScan();
     } else {
@@ -1079,49 +1072,78 @@ void CrateLibrary::addTrack(
     }
 }
 
+void CrateLibrary::applySavedTags() {
+    const auto cachedTags = libraryStore.loadTags();
+    for (auto& track : tracks) {
+        const auto found = cachedTags.find(track.file.getFullPathName());
+        if (found != cachedTags.end() && found->second.first == track.modifiedMs) {
+            track.tags = found->second.second;
+            track.tagsRead = true;
+        }
+    }
+}
+
 void CrateLibrary::startTagScan() {
     if (tagScanRunning) {
         return;
     }
-    std::vector<std::pair<juce::File, juce::int64>> pending;
-    for (const auto& track : tracks) {
-        if (!track.tagsRead && track.available) {
-            pending.emplace_back(track.file, track.modifiedMs);
+    struct Pending {
+        std::size_t index;
+        juce::File file;
+        juce::int64 modified;
+    };
+    std::vector<Pending> pending;
+    for (std::size_t i = 0; i < tracks.size(); ++i) {
+        if (!tracks[i].tagsRead && tracks[i].available) {
+            pending.push_back({i, tracks[i].file, tracks[i].modifiedMs});
         }
     }
     if (pending.empty()) {
         return;
     }
     tagScanRunning = true;
-    tagWorker.addJob(std::function<void()>{[safe = SafePointer<CrateLibrary>(this), pending, cancel = tagScanCancel] {
-        std::vector<std::tuple<juce::String, juce::int64, TrackTags>> batch;
+    // Runs in the background. Results come back in small batches; each one is matched to its library row
+    // by position, so filing a batch never searches the whole library.
+    tagWorker.addJob(std::function<void()>{[safe = SafePointer<CrateLibrary>(this), pending = std::move(pending),
+                                                   cancel = tagScanCancel] {
+        struct Result {
+            std::size_t index;
+            juce::File file;
+            juce::int64 modified;
+            TrackTags tags;
+        };
+        std::vector<Result> batch;
         const auto flush = [&] {
             juce::MessageManager::callAsync([safe, rows = std::move(batch)] {
                 if (!safe) {
                     return;
                 }
-                for (const auto& [path, modified, tags] : rows) {
-                    const auto track = std::find_if(safe->tracks.begin(), safe->tracks.end(), [&](const auto& item) {
-                        return item.modifiedMs == modified && item.file.getFullPathName() == path;
-                    });
-                    if (track != safe->tracks.end()) {
-                        track->tags = tags;
-                        track->tagsRead = true;
+                std::vector<std::tuple<juce::String, juce::int64, TrackTags>> saved;
+                saved.reserve(rows.size());
+                for (const auto& row : rows) {
+                    if (row.index < safe->tracks.size()) {
+                        auto& track = safe->tracks[row.index];
+                        if (track.modifiedMs == row.modified && track.file == row.file) {
+                            track.tags = row.tags;
+                            track.tagsRead = true;
+                        }
                     }
+                    saved.emplace_back(row.file.getFullPathName(), row.modified, row.tags);
                 }
-                safe->libraryStore.saveTags(rows);
+                safe->libraryStore.saveTags(saved);
                 safe->table.repaint();
             });
             batch.clear();
         };
-        for (const auto& [file, modified] : pending) {
+        for (const auto& item : pending) {
             if (cancel->load()) {
                 return;
             }
             // A file without readable tags is still recorded, so it isn't read again.
-            batch.emplace_back(file.getFullPathName(), modified, readTrackTags(file).value_or(TrackTags{}));
-            if (batch.size() >= 40) {
+            batch.push_back({item.index, item.file, item.modified, readTrackTags(item.file).value_or(TrackTags{})});
+            if (batch.size() >= 100) {
                 flush();
+                juce::Thread::sleep(5); // Leave the disk and screen room for deck loading during a long first scan.
             }
         }
         if (!batch.empty()) {
@@ -1889,6 +1911,8 @@ void CrateLibrary::browseMixxx() {
                     for (auto& track : safe->tracks) {
                         track.available = track.file.existsAsFile();
                     }
+                    safe->applySavedTags();
+                    safe->startTagScan();
                 }
                 safe->playlists = safe->libraryStore.loadPlaylists();
                 safe->refreshPlaylistPicker();

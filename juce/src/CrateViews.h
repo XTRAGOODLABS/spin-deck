@@ -258,6 +258,7 @@ class CrateLibrary final : public juce::Component, public juce::FileDragAndDropT
     juce::ThreadPool analysisWorker{1};
     // Song details are read from the files in the background and saved, so each file is read once.
     void startTagScan();
+    void applySavedTags();
     juce::ThreadPool tagWorker{1};
     bool tagScanRunning = false;
     std::shared_ptr<std::atomic<bool>> tagScanCancel = std::make_shared<std::atomic<bool>>(false);
