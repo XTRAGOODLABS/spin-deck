@@ -174,6 +174,7 @@ class FourDeckMixer final : public juce::AudioSource {
     std::array<Sampler, 8> samplers;
     void mixSamplers(const juce::AudioSourceChannelInfo&);
     juce::AudioBuffer<float> deckBuffer{2, 512};
+    juce::AudioBuffer<float> sendBuffer{2, 512}; // Stems sent through a deck's effect.
     float crossfader = 0, headphoneMix = 0;
     float echoDepth = 0.4f;
     int echoDivision = 0;

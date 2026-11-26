@@ -616,43 +616,65 @@ void FourDeckMixer::mixDeck(std::size_t index, const juce::AudioSourceChannelInf
     for (int offset = 0; offset < out.numSamples; offset += deckBuffer.getNumSamples()) {
         const int count = std::min(deckBuffer.getNumSamples(), out.numSamples - offset);
         deckBuffer.clear(0, count);
+        const bool sends = deck.hasStemSends();
+        if (sends) {
+            sendBuffer.clear(0, count);
+        }
         const auto braking = channel.brakeRemaining > 0;
         const double ratio = braking ? std::max(0.025, (channel.brakeRemaining - 0.5 * count) /
                 channel.brakeLength) : 1.0;
-        deck.render({&deckBuffer, 0, count}, deviceRate, speed * ratio);
+        deck.render({&deckBuffer, 0, count}, deviceRate, speed * ratio, sends ? &sendBuffer : nullptr);
         if (braking) {
             channel.brakeRemaining -= count;
             if (channel.brakeRemaining <= 0) {
                 deck.setPlaying(false);
             }
-            deckBuffer.applyGainRamp(0, count, static_cast<float>(std::min(1.0, ratio + count / channel.brakeLength)),
-                    static_cast<float>(ratio));
-        }
-        const int fading = std::min(count, channel.continuityFadeRemaining);
-        for (int sideIndex = 0; sideIndex < 2; ++sideIndex) {
-            auto* samples = deckBuffer.getWritePointer(sideIndex);
-            for (int i = 0; i < fading; ++i) {
-                const float blend = 1.0f - static_cast<float>(channel.continuityFadeRemaining - i - 1) /
-                        static_cast<float>(continuityFadeLength);
-                samples[i] = std::lerp(channel.continuityAnchor[sideIndex], samples[i], blend);
+            const auto from = static_cast<float>(std::min(1.0, ratio + count / channel.brakeLength));
+            deckBuffer.applyGainRamp(0, count, from, static_cast<float>(ratio));
+            if (sends) {
+                sendBuffer.applyGainRamp(0, count, from, static_cast<float>(ratio));
             }
-            channel.lastDeckSamples[sideIndex] = samples[count - 1];
         }
-        channel.continuityFadeRemaining -= fading;
-        channel.echo.process(deckBuffer, count, delaySamples, echoDepth, echoActive, echoOut);
-        if (channel.riserLevel.isSmoothing() || channel.riserLevel.getCurrentValue() > 0) {
-            auto* left = deckBuffer.getWritePointer(0);
-            auto* right = deckBuffer.getWritePointer(1);
-            for (int i = 0; i < count; ++i) {
-                const float amount = channel.riserLevel.getNextValue();
-                channel.noiseState = channel.noiseState * 1664525u + 1013904223u;
-                const float noise = (static_cast<float>(channel.noiseState >> 16) / 32768.0f - 1) *
-                        amount * amount * 0.085f;
-                channel.riserBass[0] += low * (left[i] - channel.riserBass[0]);
-                channel.riserBass[1] += low * (right[i] - channel.riserBass[1]);
-                left[i] += noise - channel.riserBass[0] * amount * 0.85f;
-                right[i] += noise - channel.riserBass[1] * amount * 0.85f;
+        const auto continuity = [&] {
+            const int fading = std::min(count, channel.continuityFadeRemaining);
+            for (int sideIndex = 0; sideIndex < 2; ++sideIndex) {
+                auto* samples = deckBuffer.getWritePointer(sideIndex);
+                for (int i = 0; i < fading; ++i) {
+                    const float blend = 1.0f - static_cast<float>(channel.continuityFadeRemaining - i - 1) /
+                            static_cast<float>(continuityFadeLength);
+                    samples[i] = std::lerp(channel.continuityAnchor[sideIndex], samples[i], blend);
+                }
+                channel.lastDeckSamples[sideIndex] = samples[count - 1];
             }
+            channel.continuityFadeRemaining -= fading;
+        };
+        const auto effects = [&](juce::AudioBuffer<float>& audio) {
+            channel.echo.process(audio, count, delaySamples, echoDepth, echoActive, echoOut);
+            if (channel.riserLevel.isSmoothing() || channel.riserLevel.getCurrentValue() > 0) {
+                auto* left = audio.getWritePointer(0);
+                auto* right = audio.getWritePointer(1);
+                for (int i = 0; i < count; ++i) {
+                    const float amount = channel.riserLevel.getNextValue();
+                    channel.noiseState = channel.noiseState * 1664525u + 1013904223u;
+                    const float noise = (static_cast<float>(channel.noiseState >> 16) / 32768.0f - 1) *
+                            amount * amount * 0.085f;
+                    channel.riserBass[0] += low * (left[i] - channel.riserBass[0]);
+                    channel.riserBass[1] += low * (right[i] - channel.riserBass[1]);
+                    left[i] += noise - channel.riserBass[0] * amount * 0.85f;
+                    right[i] += noise - channel.riserBass[1] * amount * 0.85f;
+                }
+            }
+        };
+        if (sends) {
+            // Only the sent stems go through the effect; the other stems stay dry.
+            effects(sendBuffer);
+            for (int sideIndex = 0; sideIndex < 2; ++sideIndex) {
+                deckBuffer.addFrom(sideIndex, 0, sendBuffer, sideIndex, 0, count);
+            }
+            continuity();
+        } else {
+            continuity();
+            effects(deckBuffer);
         }
         std::array<float, 512> masterRamp, cueRamp;
         for (int frame = 0; frame < count; ++frame) {

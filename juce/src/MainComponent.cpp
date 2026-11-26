@@ -272,6 +272,16 @@ DeckPanel::DeckPanel(std::size_t panelIndex, FourDeckMixer& deckMixer)
         volume.setTooltip(juce::String(labels[i]) + " volume. Double-click for full.");
         volume.onValueChange = [this, i] { engine.setStemGain(i, static_cast<float>(stemVolumes[i].getValue())); };
         addAndMakeVisible(volume);
+        auto& fx = stemFx[i];
+        fx.setButtonText("FX");
+        fx.setTitle("Send " + juce::String(labels[i]) + " to the effect");
+        fx.setTooltip("Send " + juce::String(labels[i]) + " through this deck's effect (Echo, Echo Out, Riser). "
+                      "The other stems stay dry.");
+        fx.setColour(juce::TextButton::buttonOnColourId, crate::amber);
+        fx.setColour(juce::TextButton::textColourOnId, crate::ink);
+        fx.getProperties().set("fontSize", 10.0f);
+        fx.onClick = [this, i] { engine.toggleStemSend(i); timerCallback(); };
+        addAndMakeVisible(fx);
     }
     for (auto* control : std::array<juce::Component*, 20>{
                  &title, &track, &load, &play, &gain, &bpm, &anchor,
@@ -580,6 +590,8 @@ void DeckPanel::resized() {
         const int knob = juce::jmin(slot.getHeight() + 2, 28);
         stemVolumes[i].setBounds(slot.removeFromRight(knob).withSizeKeepingCentre(knob, knob));
         slot.removeFromRight(2);
+        stemFx[i].setBounds(slot.removeFromRight(28));
+        slot.removeFromRight(2);
         stemButtons[i].setBounds(slot);
     }
     area.removeFromTop(gap);
@@ -721,10 +733,13 @@ void DeckPanel::timerCallback() {
     }
     const auto muted = engine.mutedStems();
     const auto gains = engine.stemGains();
+    const auto sends = engine.stemSends();
     for (std::size_t i = 0; i < stemButtons.size(); ++i) {
         stemButtons[i].setEnabled(muted.has_value());
         stemButtons[i].setToggleState(muted.has_value() && (*muted & (1u << i)) == 0, juce::dontSendNotification);
         stemVolumes[i].setEnabled(muted.has_value());
+        stemFx[i].setEnabled(muted.has_value());
+        stemFx[i].setToggleState((sends & (1u << i)) != 0, juce::dontSendNotification);
         if (!stemVolumes[i].isMouseButtonDown()) {
             stemVolumes[i].setValue(gains[i], juce::dontSendNotification);
         }

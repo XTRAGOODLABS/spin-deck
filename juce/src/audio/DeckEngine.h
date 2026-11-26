@@ -78,6 +78,10 @@ class DeckEngine final {
     // Per-stem volume, 0 to 1, in the order drums, bass, other, vocals. Reset to full on each load.
     void setStemGain(std::size_t stem, float gain);
     std::array<float, 4> stemGains() const;
+    // Stems sent through the deck's effect (bit 0 drums ... bit 3 vocals). Reset on each load.
+    void toggleStemSend(std::size_t stem);
+    uint8_t stemSends() const;
+    bool hasStemSends() const { return stemSend != 0 && stemPcm.front().getNumSamples() > 0; }
     // For the screen: the playing key (after any key shift) and cue positions in seconds.
     std::optional<MusicalKey> currentKey() const;
     struct Markers {
@@ -130,7 +134,9 @@ class DeckEngine final {
     bool startLoopRoll(double beats);
     void restoreRoll();
     void applyPending(double sampleOvershoot);
-    void render(const juce::AudioSourceChannelInfo& output, double deviceRate, double speed);
+    // Renders the deck. With a send buffer, stems marked for the effect go there instead of `output`.
+    void render(const juce::AudioSourceChannelInfo& output, double deviceRate, double speed,
+            juce::AudioBuffer<float>* send = nullptr);
     void renderSegment(const juce::AudioSourceChannelInfo& output, double deviceRate, double speed);
     void prepareKeyLock(double deviceRate);
     void renderKeyLocked(const juce::AudioSourceChannelInfo& output, double deviceRate, double speed);
@@ -150,7 +156,9 @@ class DeckEngine final {
     };
     // True when playback sums the separate stems instead of using the full mix.
     bool usesStemSum() const;
-    ChannelSamples channelSamples(int channel) const;
+    ChannelSamples channelSamples(int channel, uint8_t subset = 0x0f) const;
+    juce::AudioBuffer<float>* sendTarget = nullptr; // Set only while rendering with stem sends.
+    uint8_t mainSubset() const { return sendTarget ? static_cast<uint8_t>(0x0f & ~stemSend) : 0x0f; }
     static float sampleAt(const ChannelSamples&, double position, int last, const std::optional<Loop>&);
 
     struct KeyLock;
@@ -173,6 +181,8 @@ class DeckEngine final {
     std::array<juce::AudioBuffer<float>, 4> stemPcm;
     uint8_t stemMutes = 0;
     std::array<float, 4> stemGain{1, 1, 1, 1};
+    uint8_t stemSend = 0;
+    std::unique_ptr<KeyLock> sendLock; // Second key-lock stream for the sent stems.
     double sourceRate = 0;
     double frame = 0;
     float gain = 1;

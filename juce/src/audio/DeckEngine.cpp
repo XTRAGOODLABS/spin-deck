@@ -25,7 +25,8 @@ struct DeckEngine::KeyLock {
 };
 
 DeckEngine::DeckEngine(std::mutex& stateMutex, TrackMetadataStore& store)
-        : mutex(stateMutex), metadataStore(store), keyLock(std::make_unique<KeyLock>()) {
+        : mutex(stateMutex), metadataStore(store), keyLock(std::make_unique<KeyLock>()),
+          sendLock(std::make_unique<KeyLock>()) {
 }
 
 DeckEngine::~DeckEngine() = default;
@@ -105,6 +106,8 @@ bool DeckEngine::load(const juce::File& file, Overview* overview) {
         std::swap(stemPcm, stems.parts);
         stemMutes = 0;
         stemGain = {1, 1, 1, 1};
+        stemSend = 0;
+        sendLock->speed = 0;
         sourceRate = rate;
         loadedTrack = file;
         saveFailed = !saved;
@@ -212,16 +215,17 @@ float DeckEngine::ChannelSamples::at(int position) const {
 }
 
 bool DeckEngine::usesStemSum() const {
-    return stemMutes != 0 || std::any_of(stemGain.begin(), stemGain.end(), [](float g) { return g != 1.0f; });
+    return stemMutes != 0 || stemSend != 0 ||
+            std::any_of(stemGain.begin(), stemGain.end(), [](float g) { return g != 1.0f; });
 }
 
-DeckEngine::ChannelSamples DeckEngine::channelSamples(int channel) const {
+DeckEngine::ChannelSamples DeckEngine::channelSamples(int channel, uint8_t subset) const {
     ChannelSamples samples;
     if (stemPcm.front().getNumSamples() == 0 || !usesStemSum()) {
         samples.sources[samples.count++] = pcm.getReadPointer(channel);
     } else {
         for (std::size_t i = 0; i < stemPcm.size(); ++i) {
-            if ((stemMutes & (1u << i)) == 0 && stemGain[i] > 0.0f) {
+            if ((subset & (1u << i)) != 0 && (stemMutes & (1u << i)) == 0 && stemGain[i] > 0.0f) {
                 samples.gains[samples.count] = stemGain[i];
                 samples.unity = samples.unity && stemGain[i] == 1.0f;
                 samples.sources[samples.count++] = stemPcm[i].getReadPointer(channel);
@@ -247,6 +251,21 @@ void DeckEngine::setStemGain(std::size_t stem, float value) {
 std::array<float, 4> DeckEngine::stemGains() const {
     const std::lock_guard lock(mutex);
     return stemGain;
+}
+
+void DeckEngine::toggleStemSend(std::size_t stem) {
+    const std::lock_guard lock(mutex);
+    if (stem < 4 && stemPcm.front().getNumSamples() > 0) {
+        stemSend = static_cast<uint8_t>(stemSend ^ (1u << stem));
+        if (stemSend == 0) {
+            sendLock->speed = 0; // Re-prime the second key-lock stream next time.
+        }
+    }
+}
+
+uint8_t DeckEngine::stemSends() const {
+    const std::lock_guard lock(mutex);
+    return stemSend;
 }
 
 void DeckEngine::play() {
@@ -340,8 +359,12 @@ void DeckEngine::renderScratch(const juce::AudioSourceChannelInfo& info, double 
     auto* outL = info.buffer->getWritePointer(0, info.startSample);
     auto* outR = info.buffer->getNumChannels() > 1
             ? info.buffer->getWritePointer(1, info.startSample) : nullptr;
-    const auto left = channelSamples(0);
-    const auto right = channelSamples(1);
+    const auto left = channelSamples(0, mainSubset());
+    const auto right = channelSamples(1, mainSubset());
+    const auto sendLeft = channelSamples(0, stemSend);
+    const auto sendRight = channelSamples(1, stemSend);
+    auto* toSendL = sendTarget ? sendTarget->getWritePointer(0, info.startSample) : nullptr;
+    auto* toSendR = sendTarget ? sendTarget->getWritePointer(1, info.startSample) : nullptr;
     const double minimum = loop ? loop->start : 0;
     const double maximum = loop ? std::nextafter(loop->end, loop->start) : last;
     frame = std::clamp(frame, minimum, maximum);
@@ -358,6 +381,10 @@ void DeckEngine::renderScratch(const juce::AudioSourceChannelInfo& info, double 
         outL[i] += std::lerp(left.at(index), left.at(next), fraction) * level;
         if (outR) {
             outR[i] += std::lerp(right.at(index), right.at(next), fraction) * level;
+        }
+        if (toSendL) {
+            toSendL[i] += std::lerp(sendLeft.at(index), sendLeft.at(next), fraction) * level;
+            toSendR[i] += std::lerp(sendRight.at(index), sendRight.at(next), fraction) * level;
         }
         frame = std::clamp(frame + scratchSpeed * ratio, minimum, maximum);
     }
@@ -1056,7 +1083,13 @@ void DeckEngine::applyPending(double sampleOvershoot) {
     playing = frame < pcm.getNumSamples();
 }
 
-void DeckEngine::render(const juce::AudioSourceChannelInfo& info, double deviceRate, double speed) {
+void DeckEngine::render(const juce::AudioSourceChannelInfo& info, double deviceRate, double speed,
+        juce::AudioBuffer<float>* send) {
+    sendTarget = send != nullptr && hasStemSends() ? send : nullptr;
+    const struct ClearSend {
+        DeckEngine& deck;
+        ~ClearSend() { deck.sendTarget = nullptr; }
+    } clearSend{*this};
     if (scratch.active) {
         renderScratch(info, deviceRate);
         return;
@@ -1118,14 +1151,22 @@ void DeckEngine::renderSegment(
     auto* left = info.buffer->getWritePointer(0, info.startSample);
     auto* right = info.buffer->getNumChannels() > 1
             ? info.buffer->getWritePointer(1, info.startSample) : nullptr;
-    const auto sourceLeft = channelSamples(0);
-    const auto sourceRight = channelSamples(1);
+    const auto sourceLeft = channelSamples(0, mainSubset());
+    const auto sourceRight = channelSamples(1, mainSubset());
+    const auto sendLeft = channelSamples(0, stemSend);
+    const auto sendRight = channelSamples(1, stemSend);
+    auto* toSendL = sendTarget ? sendTarget->getWritePointer(0, info.startSample) : nullptr;
+    auto* toSendR = sendTarget ? sendTarget->getWritePointer(1, info.startSample) : nullptr;
     const int last = pcm.getNumSamples() - 1;
     for (int i = 0; i < info.numSamples; ++i) {
         renderGain += gainStep;
         left[i] += renderGain * sampleAt(sourceLeft, frame, last, loop);
         if (right) {
             right[i] += renderGain * sampleAt(sourceRight, frame, last, loop);
+        }
+        if (toSendL) {
+            toSendL[i] += renderGain * sampleAt(sendLeft, frame, last, loop);
+            toSendR[i] += renderGain * sampleAt(sendRight, frame, last, loop);
         }
         frame = advanceFrame(frame, stride, loop);
         if (frame >= pcm.getNumSamples()) {
@@ -1137,9 +1178,11 @@ void DeckEngine::renderSegment(
 }
 
 void DeckEngine::prepareKeyLock(double deviceRate) {
-    keyLock->speed = 0;
-    if (deviceRate > 0) {
-        keyLock->processor.presetCheaper(2, static_cast<float>(deviceRate), true);
+    for (auto* state : {keyLock.get(), sendLock.get()}) {
+        state->speed = 0;
+        if (deviceRate > 0) {
+            state->processor.presetCheaper(2, static_cast<float>(deviceRate), true);
+        }
     }
 }
 
@@ -1168,23 +1211,33 @@ void DeckEngine::renderKeyLocked(
         const SourceChannel& operator[](int channel) const { return channel == 0 ? left : right; }
     };
     const double sourceStride = sourceRate / deviceRate;
-    const auto inputAt = [&](double position) {
-        return Source{{channelSamples(0), pcm.getNumSamples(), position, sourceStride, loop},
-                {channelSamples(1), pcm.getNumSamples(), position, sourceStride, loop}};
+    const auto inputAt = [&](double position, uint8_t subset) {
+        return Source{{channelSamples(0, subset), pcm.getNumSamples(), position, sourceStride, loop},
+                {channelSamples(1, subset), pcm.getNumSamples(), position, sourceStride, loop}};
     };
 
-    auto& state = *keyLock;
     const auto semitones = static_cast<float>(transpose + (keyLockEnabled ? 0 : 12 * std::log2(speed)));
-    state.processor.setTransposeSemitones(semitones);
+    // Prime a key-lock stream at the playhead when playback jumped or the stream is new.
+    const auto prime = [&](KeyLock& state, uint8_t subset) {
+        state.processor.setTransposeSemitones(semitones);
+        if (state.speed == 0 || state.revision != revision) {
+            const int preRoll = state.processor.outputSeekLength(static_cast<float>(speed));
+            state.processor.outputSeek(inputAt(frame, subset), preRoll);
+            state.inputFrame = frame + preRoll * sourceStride;
+            state.inputRemainder = 0;
+            state.revision = revision;
+        }
+        state.speed = speed;
+    };
+    auto& state = *keyLock;
     if (state.speed == 0 || state.revision != revision) {
-        const int preRoll = state.processor.outputSeekLength(static_cast<float>(speed));
-        state.processor.outputSeek(inputAt(frame), preRoll);
-        state.inputFrame = frame + preRoll * sourceStride;
-        state.inputRemainder = 0;
-        state.revision = revision;
+        sendLock->speed = 0; // Whenever the main stream restarts, the send stream restarts with it.
+    }
+    prime(state, mainSubset());
+    if (sendTarget) {
+        prime(*sendLock, stemSend);
     }
 
-    state.speed = speed;
     const double playbackStride = sourceStride * speed;
     int count = info.numSamples;
     if (!loop) {
@@ -1195,19 +1248,34 @@ void DeckEngine::renderKeyLocked(
     auto* left = info.buffer->getWritePointer(0, info.startSample);
     auto* right = info.buffer->getNumChannels() > 1
             ? info.buffer->getWritePointer(1, info.startSample) : nullptr;
+    auto* toSendL = sendTarget ? sendTarget->getWritePointer(0, info.startSample) : nullptr;
+    auto* toSendR = sendTarget ? sendTarget->getWritePointer(1, info.startSample) : nullptr;
     const std::array output{state.output[0].data(), state.output[1].data()};
+    const std::array sendOutput{sendLock->output[0].data(), sendLock->output[1].data()};
     for (int offset = 0; offset < count;) {
         const int chunk = std::min(KeyLock::chunkSize, count - offset);
         const double exactInput = chunk * speed + state.inputRemainder;
         const int inputCount = static_cast<int>(exactInput);
         state.inputRemainder = exactInput - inputCount;
-        state.processor.process(inputAt(state.inputFrame), inputCount, output, chunk);
+        state.processor.process(inputAt(state.inputFrame, mainSubset()), inputCount, output, chunk);
         state.inputFrame += inputCount * sourceStride;
+        if (sendTarget) {
+            auto& send = *sendLock;
+            const double sendExact = chunk * speed + send.inputRemainder;
+            const int sendCount = static_cast<int>(sendExact);
+            send.inputRemainder = sendExact - sendCount;
+            send.processor.process(inputAt(send.inputFrame, stemSend), sendCount, sendOutput, chunk);
+            send.inputFrame += sendCount * sourceStride;
+        }
         for (int i = 0; i < chunk; ++i) {
             renderGain += gainStep;
             left[offset + i] += output[0][i] * renderGain;
             if (right) {
                 right[offset + i] += output[1][i] * renderGain;
+            }
+            if (toSendL) {
+                toSendL[offset + i] += sendOutput[0][i] * renderGain;
+                toSendR[offset + i] += sendOutput[1][i] * renderGain;
             }
         }
         offset += chunk;
