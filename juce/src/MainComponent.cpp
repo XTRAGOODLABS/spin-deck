@@ -1139,6 +1139,52 @@ MainComponent::MainComponent()
     tab(waveformsTab, true, "Show or hide the scrolling waveforms.");
     tab(effectsTab, true, "Show or hide the effects bar.");
     tab(samplersTab, false, "Show or hide the sampler pads.");
+    tab(micTab, false, "Show or hide the mic / aux input controls.");
+    tab(autoDjTab, false, "Auto DJ: play the queue on decks 1 and 2 with automatic crossfades. "
+                          "Right-click songs or a playlist to fill the queue.");
+    autoDjTab.setColour(juce::TextButton::buttonOnColourId, crate::green);
+    autoDjTab.setColour(juce::TextButton::textColourOnId, crate::ink);
+    autoDjTab.onClick = [this] {
+        if (autoDjTab.getToggleState()) {
+            setDeckCount(2);
+            if (autoDj.queue.empty()) {
+                showToast("AUTO DJ: right-click songs to add");
+            }
+        } else {
+            autoDj.fading = false;
+        }
+        resized();
+        repaint();
+    };
+    autoDjNote.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+    autoDjNote.setColour(juce::TextButton::textColourOffId, crate::green);
+    autoDjNote.getProperties().set("fontSize", 11.0f);
+    autoDjNote.setTooltip("Auto DJ queue. Click for options.");
+    autoDjNote.onClick = [this] { showAutoDjMenu(); };
+    addChildComponent(autoDjNote);
+    library.onAutoDj = [this](const std::vector<juce::File>& files, bool replace) { queueAutoDj(files, replace); };
+
+    // Mic / aux row.
+    micOn.setClickingTogglesState(true);
+    micOn.setColour(juce::TextButton::buttonOnColourId, crate::clip);
+    micOn.setColour(juce::TextButton::textColourOnId, crate::text);
+    micOn.setTooltip("Mix the audio input (channels 1-2 of your audio device) into the main output and recordings. "
+                     "The T7 already sends its own MIC input to its speakers, so use this for other inputs.");
+    micOn.onClick = [this] { setMicInput(micOn.getToggleState()); };
+    talk.setClickingTogglesState(true);
+    talk.setColour(juce::TextButton::buttonOnColourId, crate::amber);
+    talk.setColour(juce::TextButton::textColourOnId, crate::ink);
+    talk.setTooltip("Talkover: lowers the music while you speak.");
+    talk.onClick = [this] { mixer.setTalkover(talk.getToggleState()); };
+    micLevel.setSliderStyle(juce::Slider::LinearHorizontal);
+    micLevel.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
+    micLevel.setRange(0, 1.5, 0.01);
+    micLevel.setValue(0.8, juce::dontSendNotification);
+    micLevel.setTitle("Mic level");
+    micLevel.onValueChange = [this] { mixer.setMicLevel(static_cast<float>(micLevel.getValue())); };
+    for (auto* control : std::initializer_list<juce::Component*>{&micOn, &talk, &micLevel}) {
+        addChildComponent(control);
+    }
     for (auto* mode : {&twoDecks, &fourDecks}) {
         mode->setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
         mode->setColour(juce::TextButton::textColourOffId, crate::muted);
@@ -1325,6 +1371,10 @@ void MainComponent::timerCallback() {
     if (toastTicks > 0 && --toastTicks == 0) {
         toast.setVisible(false);
     }
+    autoDjTick();
+    if (!micArea.isEmpty()) {
+        repaint(micMeter);
+    }
     const bool recording = mixer.isRecording();
     record.setToggleState(recording, juce::dontSendNotification);
     record.setButtonText(juce::String::fromUTF8(recording ? "\xE2\x97\x8F STOP REC" : "\xE2\x97\x8F REC"));
@@ -1403,6 +1453,200 @@ void MainComponent::rememberT7AudioTiming() {
         t7SampleRate = device->getCurrentSampleRate();
         t7BufferSize = device->getCurrentBufferSizeSamples();
     }
+}
+
+void MainComponent::setMicInput(bool enabled) {
+    auto setup = deviceManager.getAudioDeviceSetup();
+    if (enabled) {
+        // Use the output device's own inputs when it has them (the T7 does), otherwise the Mac's default input.
+        juce::String inputName = setup.outputDeviceName;
+        if (auto* type = deviceManager.getCurrentDeviceTypeObject()) {
+            const auto inputs = type->getDeviceNames(true);
+            if (!inputs.contains(inputName)) {
+                inputName = inputs[type->getDefaultDeviceIndex(true)];
+            }
+        }
+        setup.inputDeviceName = inputName;
+        setup.useDefaultInputChannels = false;
+        setup.inputChannels.clear();
+        setup.inputChannels.setRange(0, 2, true);
+    } else {
+        setup.inputDeviceName = {};
+        setup.useDefaultInputChannels = false;
+        setup.inputChannels.clear();
+    }
+    const auto error = deviceManager.setAudioDeviceSetup(setup, true);
+    if (error.isNotEmpty() && enabled) {
+        micOn.setToggleState(false, juce::dontSendNotification);
+        mixer.setMicEnabled(false);
+        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon, "Mic / aux", error);
+        return;
+    }
+    mixer.setMicEnabled(enabled);
+    showToast(enabled ? "MIC ON" : "MIC OFF");
+}
+
+void MainComponent::queueAutoDj(const std::vector<juce::File>& files, bool replace) {
+    if (replace) {
+        autoDj.queue.clear();
+    }
+    int added = 0;
+    for (const auto& file : files) {
+        if (file.existsAsFile()) {
+            autoDj.queue.push_back(file);
+            ++added;
+        }
+    }
+    showToast("AUTO DJ: " + juce::String(added) + (added == 1 ? " song" : " songs") + (replace ? " queued" : " added"));
+    if (!autoDjTab.getToggleState() && replace) {
+        autoDjTab.setToggleState(true, juce::sendNotification);
+    }
+}
+
+void MainComponent::autoDjLoad(int deck, bool playWhenReady) {
+    if (autoDj.queue.empty() || autoDj.loading || panels[static_cast<std::size_t>(deck)]->isLoading()) {
+        return;
+    }
+    const auto file = autoDj.queue.front();
+    autoDj.queue.pop_front();
+    autoDj.loading = true;
+    panels[static_cast<std::size_t>(deck)]->loadFile(file, {}, [this, deck, playWhenReady] {
+        autoDj.loading = false;
+        autoDj.preloaded = deck;
+        if (playWhenReady && autoDjTab.getToggleState()) {
+            mixer.setCrossfader(deck == 0 ? -1.0f : 1.0f);
+            mixer.setChannelControl(static_cast<std::size_t>(deck), FourDeckMixer::ChannelControl::fader,
+                    juce::jmax(0.8f, mixer.mixControls().strips[static_cast<std::size_t>(deck)].fader));
+            mixer.deck(static_cast<std::size_t>(deck)).restartFromCue();
+            autoDj.preloaded = -1;
+        }
+    });
+    // A file that fails to load leaves loading set; clear it so the queue moves on.
+    juce::Timer::callAfterDelay(20000, [safe = SafePointer<MainComponent>(this)] {
+        if (safe) {
+            safe->autoDj.loading = false;
+        }
+    });
+}
+
+void MainComponent::autoDjTick() {
+    if (!autoDjTab.getToggleState()) {
+        return;
+    }
+    const auto& queue = autoDj.queue;
+    const auto nextName = queue.empty() ? juce::String("queue empty")
+                                        : "next: " + crate::titleAndArtist(queue.front()).first;
+    const auto note = "AUTO DJ  " + nextName + (queue.size() > 1 ? "  +" + juce::String(queue.size() - 1) : juce::String{});
+    if (autoDjNote.getButtonText() != note) {
+        autoDjNote.setButtonText(note);
+    }
+    if (autoDj.fading) {
+        const double t = juce::jlimit(0.0, 1.0, (juce::Time::getMillisecondCounterHiRes() - autoDj.fadeStartMs) /
+                (autoDj.fadeSeconds * 1000.0));
+        const float cross = static_cast<float>(autoDj.from == 0 ? -1 + 2 * t : 1 - 2 * t);
+        mixer.setCrossfader(cross);
+        if (t >= 1.0) {
+            finishAutoDjFade();
+        }
+        return;
+    }
+    auto& deck0 = mixer.deck(0);
+    auto& deck1 = mixer.deck(1);
+    const int playing = deck0.isPlaying() ? 0 : deck1.isPlaying() ? 1 : -1;
+    if (playing < 0) {
+        // Nothing playing: start the first song on deck 1.
+        if (!queue.empty()) {
+            autoDjLoad(0, true);
+        }
+        return;
+    }
+    const int other = 1 - playing;
+    auto& current = mixer.deck(static_cast<std::size_t>(playing));
+    if (autoDj.preloaded != other && !mixer.deck(static_cast<std::size_t>(other)).isPlaying() && !queue.empty()) {
+        autoDjLoad(other, false);
+    }
+    const double remaining = current.durationSeconds() - current.positionSeconds();
+    if (autoDj.preloaded == other && remaining <= autoDj.fadeSeconds) {
+        startAutoDjFade(playing, other);
+    }
+}
+
+void MainComponent::startAutoDjFade(int from, int to) {
+    const auto fromIndex = static_cast<std::size_t>(from), toIndex = static_cast<std::size_t>(to);
+    autoDj.from = from;
+    autoDj.to = to;
+    autoDj.preloaded = -1;
+    const auto strips = mixer.mixControls().strips;
+    mixer.setChannelControl(toIndex, FourDeckMixer::ChannelControl::fader, strips[fromIndex].fader);
+    // Beat-match when both songs have a beat grid.
+    if (mixer.deck(fromIndex).beatGrid() && mixer.deck(toIndex).beatGrid()) {
+        mixer.setSyncLeader(fromIndex);
+        mixer.setSyncEnabled(toIndex, true);
+    }
+    mixer.deck(toIndex).restartFromCue();
+    autoDj.fadeStartMs = juce::Time::getMillisecondCounterHiRes();
+    autoDj.fading = true;
+}
+
+void MainComponent::finishAutoDjFade() {
+    const auto fromIndex = static_cast<std::size_t>(autoDj.from), toIndex = static_cast<std::size_t>(autoDj.to);
+    autoDj.fading = false;
+    // Keep the incoming song at the tempo it was synced to: move its tempo fader there, then release sync.
+    auto& incoming = mixer.deck(toIndex);
+    if (mixer.isSyncEnabled(toIndex)) {
+        const auto playingTempo = mixer.playingTempo(toIndex);
+        const auto grid = incoming.beatGrid();
+        if (playingTempo && grid) {
+            const double speed = *playingTempo / grid->tempoAt(incoming.positionSeconds());
+            int range = 0;
+            while (range + 1 < static_cast<int>(FourDeckMixer::tempoRanges.size()) &&
+                    std::abs(speed - 1) > FourDeckMixer::tempoRanges[static_cast<std::size_t>(range)]) {
+                ++range;
+            }
+            mixer.setTempoRange(toIndex, range);
+            mixer.setTempoPosition(toIndex, juce::jlimit(-1.0, 1.0,
+                    (speed - 1) / FourDeckMixer::tempoRanges[static_cast<std::size_t>(range)]));
+        }
+        mixer.setSyncEnabled(toIndex, false);
+    }
+    mixer.setSyncLeader(toIndex);
+    mixer.deck(fromIndex).pause();
+    if (autoDj.queue.empty() && !mixer.deck(toIndex).isPlaying()) {
+        showToast("AUTO DJ: queue finished");
+    }
+}
+
+void MainComponent::showAutoDjMenu() {
+    juce::PopupMenu menu;
+    const int playing = mixer.deck(0).isPlaying() ? 0 : mixer.deck(1).isPlaying() ? 1 : -1;
+    menu.addItem("Mix to the next song now", playing >= 0 && autoDj.preloaded == 1 - playing && !autoDj.fading,
+            false, [this, playing] { startAutoDjFade(playing, 1 - playing); });
+    menu.addItem("Skip the next song", !autoDj.queue.empty() || autoDj.preloaded >= 0, false, [this] {
+        if (autoDj.preloaded >= 0) {
+            autoDj.preloaded = -1; // The deck holding it will be reloaded with the following song.
+        } else if (!autoDj.queue.empty()) {
+            autoDj.queue.pop_front();
+        }
+    });
+    menu.addItem("Clear the queue", !autoDj.queue.empty(), false, [this] { autoDj.queue.clear(); });
+    juce::PopupMenu fades;
+    for (const int seconds : {5, 10, 15, 20, 30}) {
+        fades.addItem(juce::String(seconds) + " seconds", true, autoDj.fadeSeconds == seconds,
+                [this, seconds] { autoDj.fadeSeconds = seconds; });
+    }
+    menu.addSubMenu("Crossfade length", fades);
+    juce::PopupMenu upcoming;
+    int shown = 0;
+    for (const auto& file : autoDj.queue) {
+        upcoming.addItem(crate::titleAndArtist(file).first, false, false, [] {});
+        if (++shown == 15) {
+            break;
+        }
+    }
+    if (shown > 0) {
+        menu.addSubMenu("Up next (" + juce::String(static_cast<int>(autoDj.queue.size())) + ")", upcoming);
+    }
+    menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(autoDjNote));
 }
 
 void MainComponent::showSettingsMenu() {
@@ -1587,6 +1831,17 @@ void MainComponent::paint(juce::Graphics& g) {
             panels[static_cast<std::size_t>(i)]->paintWaveLane(g, lane);
         }
     }
+    if (!micArea.isEmpty()) {
+        g.setColour(crate::muted);
+        g.setFont(juce::FontOptions(11, juce::Font::bold));
+        g.drawText("MIC/AUX", micArea.withWidth(70), juce::Justification::centredLeft);
+        const auto state = mixer.micState();
+        g.setColour(crate::track);
+        g.fillRect(micMeter);
+        const float level = juce::jlimit(0.0f, 1.0f, (juce::Decibels::gainToDecibels(state.peak, -54.0f) + 54.0f) / 54.0f);
+        g.setColour(level > 0.9f ? crate::clip : crate::green);
+        g.fillRect(micMeter.withWidth(juce::roundToInt(micMeter.getWidth() * level)));
+    }
     if (!samplerArea.isEmpty()) {
         g.setColour(crate::muted);
         g.setFont(juce::FontOptions(11, juce::Font::bold));
@@ -1597,7 +1852,8 @@ void MainComponent::paint(juce::Graphics& g) {
 void MainComponent::resized() {
     auto area = getLocalBounds();
     auto toolbar = area.removeFromTop(30).reduced(6, 3);
-    for (auto* button : {&bigLibrary, &waveformsTab, &twoDecks, &fourDecks, &effectsTab, &samplersTab}) {
+    for (auto* button : {&bigLibrary, &waveformsTab, &twoDecks, &fourDecks, &effectsTab, &samplersTab, &micTab,
+                 &autoDjTab}) {
         const int width = juce::GlyphArrangement::getStringWidthInt(juce::FontOptions(11.5f, juce::Font::bold),
                 button->getButtonText()) + 18;
         button->setBounds(toolbar.removeFromLeft(width));
@@ -1607,6 +1863,10 @@ void MainComponent::resized() {
     audioSettings.setBounds(toolbar.removeFromRight(80));
     // Shrinks first on narrow windows.
     stemNote.setBounds(toolbar.removeFromRight(juce::jlimit(0, 260, toolbar.getWidth() - 330)).reduced(4, 0));
+    autoDjNote.setVisible(autoDjTab.getToggleState());
+    if (autoDjTab.getToggleState()) {
+        autoDjNote.setBounds(toolbar.removeFromRight(juce::jlimit(0, 300, toolbar.getWidth() - 330)).reduced(4, 0));
+    }
     record.setBounds(toolbar.removeFromRight(100));
     clock.setBounds(toolbar.removeFromRight(84));
     t7Button.setBounds(toolbar.removeFromRight(128));
@@ -1665,6 +1925,20 @@ void MainComponent::resized() {
     if (showFx) {
         area.removeFromTop(4);
         echoView.setBounds(area.removeFromTop(38).reduced(4, 0));
+    }
+    micArea = {};
+    const bool showMic = micTab.getToggleState();
+    for (auto* control : std::initializer_list<juce::Component*>{&micOn, &talk, &micLevel}) {
+        control->setVisible(showMic);
+    }
+    if (showMic) {
+        area.removeFromTop(4);
+        micArea = area.removeFromTop(30).reduced(10, 2);
+        auto row = micArea.withTrimmedLeft(76);
+        micOn.setBounds(row.removeFromLeft(74).reduced(2, 0));
+        micLevel.setBounds(row.removeFromLeft(180).reduced(6, 2));
+        micMeter = row.removeFromLeft(90).reduced(6, 9);
+        talk.setBounds(row.removeFromLeft(64).reduced(2, 0));
     }
     samplerArea = {};
     if (showSamplers) {

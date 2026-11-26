@@ -86,6 +86,26 @@ void FourDeckMixer::matchDeckKey(std::size_t index) {
     ++deck.revision;
 }
 
+void FourDeckMixer::setMicEnabled(bool enabled) {
+    const std::lock_guard lock(mutex);
+    micEnabled = enabled;
+}
+
+void FourDeckMixer::setMicLevel(float level) {
+    const std::lock_guard lock(mutex);
+    micLevel = juce::jlimit(0.0f, 1.5f, level);
+}
+
+void FourDeckMixer::setTalkover(bool enabled) {
+    const std::lock_guard lock(mutex);
+    talkover = enabled;
+}
+
+FourDeckMixer::MicState FourDeckMixer::micState() const {
+    const std::lock_guard lock(mutex);
+    return {micEnabled, talkover, micLevel, micPeak};
+}
+
 void FourDeckMixer::setMasterVolume(float level) {
     const std::lock_guard lock(mutex);
     masterVolumeLevel = std::clamp(level, 0.0f, 1.0f);
@@ -714,6 +734,8 @@ void FourDeckMixer::prepareToPlay(int, double sampleRate) {
     firstMixBlock = true;
     boothGain.reset(sampleRate, 0.005);
     masterGain.reset(sampleRate, 0.02);
+    micGain.reset(sampleRate, 0.02);
+    duckGain.reset(sampleRate, 0.15);
     headphoneBlend.reset(sampleRate, 0.001);
     splitBlend.reset(sampleRate, 0.001);
     for (auto& channel : channels) {
@@ -742,6 +764,14 @@ void FourDeckMixer::releaseResources() {
 
 void FourDeckMixer::getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferToFill) {
     const juce::ScopedNoDenormals noDenormals;
+    // With input channels open, the buffer arrives holding the mic/aux input. Keep it before clearing.
+    const int micFrames = std::min(bufferToFill.numSamples, micBuffer.getNumSamples());
+    for (int channel = 0; channel < 2; ++channel) {
+        const int source = std::min(channel, bufferToFill.buffer->getNumChannels() - 1);
+        if (source >= 0) {
+            micBuffer.copyFrom(channel, 0, *bufferToFill.buffer, source, bufferToFill.startSample, micFrames);
+        }
+    }
     bufferToFill.clearActiveBufferRegion();
     const std::lock_guard lock(mutex);
     if (deviceRate <= 0 || bufferToFill.buffer->getNumChannels() == 0) {
@@ -775,6 +805,32 @@ void FourDeckMixer::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
     }
     mixSamplers(bufferToFill);
     const auto channelsOut = bufferToFill.buffer->getNumChannels();
+    if (channelsOut >= 2) {
+        // Talkover lowers the music by about 12 dB; the mic is added on top, so it is also recorded.
+        if (firstMixBlock) {
+            micGain.setCurrentAndTargetValue(micEnabled ? micLevel : 0.0f);
+            duckGain.setCurrentAndTargetValue(micEnabled && talkover ? 0.25f : 1.0f);
+        } else {
+            micGain.setTargetValue(micEnabled ? micLevel : 0.0f);
+            duckGain.setTargetValue(micEnabled && talkover ? 0.25f : 1.0f);
+        }
+        micPeak *= 0.9f;
+        if (micEnabled || micGain.isSmoothing() || duckGain.isSmoothing() || duckGain.getCurrentValue() < 1.0f) {
+            auto* left = bufferToFill.buffer->getWritePointer(0, bufferToFill.startSample);
+            auto* right = bufferToFill.buffer->getWritePointer(1, bufferToFill.startSample);
+            const auto* micL = micBuffer.getReadPointer(0);
+            const auto* micR = micBuffer.getReadPointer(1);
+            for (int i = 0; i < bufferToFill.numSamples; ++i) {
+                const float duck = duckGain.getNextValue();
+                const float gain = micGain.getNextValue();
+                const float l = i < micFrames ? micL[i] * gain : 0.0f;
+                const float r = i < micFrames ? micR[i] * gain : 0.0f;
+                micPeak = std::max(micPeak, std::max(std::abs(l), std::abs(r)));
+                left[i] = left[i] * duck + l;
+                right[i] = right[i] * duck + r;
+            }
+        }
+    }
     if (channelsOut >= 2 && recorder && !recordingOverflow) {
         const std::array master{bufferToFill.buffer->getReadPointer(0, bufferToFill.startSample),
                 bufferToFill.buffer->getReadPointer(1, bufferToFill.startSample)};

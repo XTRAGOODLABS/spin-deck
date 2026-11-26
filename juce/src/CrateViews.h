@@ -156,6 +156,8 @@ class CrateLibrary final : public juce::Component, public juce::FileDragAndDropT
     std::function<FourDeckMixer::TrackContext()> readTrackContext;
     // Songs to split into stems, chosen from a right-click menu.
     std::function<void(const juce::Array<juce::File>&)> onMakeStems;
+    // Songs for Auto DJ: added to the end of its queue, or replacing it.
+    std::function<void(const std::vector<juce::File>&, bool replace)> onAutoDj;
     std::function<void(int, const juce::File&)> onLoad;
     std::function<void(int, const juce::File&)> onLoadSuggested;
     std::function<void(int, const juce::File&, int, const juce::File&,

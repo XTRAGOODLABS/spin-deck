@@ -7,6 +7,7 @@
 #include "CrateViews.h"
 
 #include <array>
+#include <deque>
 
 namespace spindeck {
 
@@ -172,7 +173,31 @@ class MainComponent final : public juce::AudioAppComponent, public juce::DragAnd
     CrateLibrary library;
     juce::TextButton twoDecks{"2 DECKS"}, fourDecks{"4 DECKS"};
     juce::TextButton bigLibrary{"BIG LIBRARY"}, waveformsTab{"WAVEFORMS"}, effectsTab{"EFFECTS"},
-            samplersTab{"SAMPLERS"};
+            samplersTab{"SAMPLERS"}, micTab{"MIC/AUX"}, autoDjTab{"AUTO DJ"};
+
+    // Mic / aux input row.
+    juce::TextButton micOn{"MIC ON"}, talk{"TALK"};
+    juce::Slider micLevel;
+    juce::Rectangle<int> micArea, micMeter;
+    void setMicInput(bool enabled);
+
+    // Auto DJ: plays a queue on decks 1 and 2 with automatic crossfades.
+    struct AutoDj {
+        std::deque<juce::File> queue;
+        int fadeSeconds = 10;
+        int preloaded = -1;      // Deck holding the next song, ready to start.
+        bool loading = false;
+        bool fading = false;
+        int from = -1, to = -1;
+        double fadeStartMs = 0;
+    } autoDj;
+    juce::TextButton autoDjNote;
+    void autoDjTick();
+    void startAutoDjFade(int from, int to);
+    void finishAutoDjFade();
+    void autoDjLoad(int deck, bool playWhenReady);
+    void showAutoDjMenu();
+    void queueAutoDj(const std::vector<juce::File>&, bool replace);
     juce::Label clock;
     juce::Rectangle<int> logoArea, samplerArea;
     juce::Rectangle<int> waveformArea;

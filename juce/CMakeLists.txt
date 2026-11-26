@@ -78,8 +78,10 @@ target_link_libraries(spindeck_audio
 juce_add_gui_app(SpinDeck
     PRODUCT_NAME "Spin Deck"
     BUNDLE_ID "com.xtragoodlabs.spindeck.juce"
-    MICROPHONE_PERMISSION_ENABLED FALSE
+    MICROPHONE_PERMISSION_ENABLED TRUE
+    MICROPHONE_PERMISSION_TEXT "Spin Deck uses audio input only when you turn on MIC/AUX."
     HARDENED_RUNTIME_ENABLED TRUE
+    HARDENED_RUNTIME_OPTIONS "com.apple.security.device.audio-input"
 )
 
 target_sources(SpinDeck PRIVATE

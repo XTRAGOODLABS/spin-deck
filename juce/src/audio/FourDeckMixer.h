@@ -39,6 +39,12 @@ class FourDeckMixer final : public juce::AudioSource {
     void setTempoBend(std::size_t index, int direction, bool held);
     void matchDeckKey(std::size_t index);
     void setBoothLevel(float level);
+    // Mic or aux input (input channels 1-2) mixed into the master and recordings.
+    void setMicEnabled(bool);
+    void setMicLevel(float);
+    void setTalkover(bool); // Lowers the music while held on so the voice cuts through.
+    struct MicState { bool enabled, talkover; float level, peak; };
+    MicState micState() const;
     // Master output volume (speakers, outputs 1-2). Recording, booth and headphones are not affected.
     void setMasterVolume(float level);
     float masterVolume() const;
@@ -162,6 +168,10 @@ class FourDeckMixer final : public juce::AudioSource {
     float boothLevel = 1;
     juce::SmoothedValue<float> boothGain{1};
     juce::SmoothedValue<float> masterGain{1};
+    juce::AudioBuffer<float> micBuffer{2, 4096};
+    bool micEnabled = false, talkover = false;
+    float micLevel = 0.8f, micPeak = 0;
+    juce::SmoothedValue<float> micGain{0}, duckGain{1};
     float masterVolumeLevel = 1;
     juce::TimeSliceThread recordingThread{"Mix recording"};
     std::unique_ptr<juce::AudioFormatWriter::ThreadedWriter> recorder;

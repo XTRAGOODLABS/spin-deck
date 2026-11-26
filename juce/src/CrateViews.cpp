@@ -2168,6 +2168,7 @@ void CrateLibrary::cellClicked(int row, int, const juce::MouseEvent& event) {
     juce::PopupMenu menu;
     const auto count = static_cast<int>(chosen.size());
     const auto which = count == 1 ? juce::String("this song") : juce::String(count) + " songs";
+    menu.addItem("Add " + which + " to Auto DJ", [this, chosen] { if (onAutoDj) onAutoDj(chosen, false); });
     menu.addItem("Make Stems for " + which, [this, chosen] { makeStemsFor(chosen); });
     menu.addItem("Analyze BPM and key for " + which, [this, chosen] { analyzeFiles(chosen, false); });
     menu.addSeparator();
@@ -2370,6 +2371,9 @@ void CrateLibrary::Sidebar::listBoxItemClicked(int row, const juce::MouseEvent& 
                     [safe = SafePointer<CrateLibrary>(&owner), files] { if (safe) safe->analyzeFiles(files, true); });
         }
         if (playlist >= 0) {
+            menu.addItem("Play " + name + " in Auto DJ", [safe = SafePointer<CrateLibrary>(&owner), files] {
+                if (safe && safe->onAutoDj) safe->onAutoDj(files, true);
+            });
             menu.addItem("Make Stems for " + name, [safe = SafePointer<CrateLibrary>(&owner), files] {
                 if (safe) safe->makeStemsFor(files);
             });
