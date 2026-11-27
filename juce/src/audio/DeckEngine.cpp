@@ -702,13 +702,22 @@ bool DeckEngine::canRevertGrid() const {
 
 void DeckEngine::setGridLocked(bool locked) {
     juce::File track;
+    std::optional<TrackBeatGrid> current;
     {
         const std::lock_guard lock(mutex);
         gridLocked = locked;
         track = loadedTrack;
+        current = grid;
     }
     if (track != juce::File{}) {
-        recordSaveResult(track, metadataStore.edit(track, [locked](TrackMetadata& data) { data.gridLocked = locked; }));
+        // Locking always keeps the grid as it is now, even in "reset unless locked" mode.
+        const bool saveGrid = locked && current && !keepGridEdits.load();
+        recordSaveResult(track, metadataStore.edit(track, [locked, saveGrid, current](TrackMetadata& data) {
+            data.gridLocked = locked;
+            if (saveGrid) {
+                data.grid = *current;
+            }
+        }));
     }
 }
 
@@ -735,6 +744,9 @@ void DeckEngine::recordSaveResult(const juce::File& track, bool success) {
 }
 
 void DeckEngine::persistGrid(const juce::File& track, TrackBeatGrid value) {
+    if (!keepGridEdits.load()) {
+        return; // "Reset unless locked": the change lasts until the song is reloaded.
+    }
     recordSaveResult(track, metadataStore.edit(track, [value](TrackMetadata& metadata) {
         metadata.grid = value;
     }));

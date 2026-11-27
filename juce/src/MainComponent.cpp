@@ -963,7 +963,11 @@ GridTools::GridTools(DeckEngine& deck) : engine(deck) {
     slower.onClick = [this, fine] { edited(engine.nudgeGridTempo(fine() ? -0.1 : -0.01)); };
     faster.onClick = [this, fine] { edited(engine.nudgeGridTempo(fine() ? 0.1 : 0.01)); };
     undo.onClick = [this] { edited(engine.revertGrid()); };
-    lock.onClick = [this] { engine.setGridLocked(!engine.isGridLocked()); refresh(); };
+    lock.onClick = [this] {
+        engine.setGridLocked(!engine.isGridLocked());
+        // In "reset unless locked" mode, locking is what saves the grid, so update the library BPM now.
+        edited(engine.isGridLocked() && !DeckEngine::keepsGridEdits());
+    };
     for (auto* button : std::initializer_list<juce::Button*>{&align, &earlier, &later, &slower, &faster, &undo, &lock}) {
         addAndMakeVisible(button);
     }
@@ -1054,9 +1058,10 @@ MainComponent::MainComponent()
         };
         gridTools[i] = std::make_unique<GridTools>(mixer.deck(i));
         gridTools[i]->onGridChanged = [this, i] {
-            // Keep the library BPM in step with grid edits.
+            // Keep the library BPM in step with grid edits (only when they are being saved).
             const auto file = mixer.trackContext().decks[i].file;
-            if (const auto grid = mixer.deck(i).beatGrid(); grid && file != juce::File{}) {
+            const bool saved = DeckEngine::keepsGridEdits() || mixer.deck(i).isGridLocked();
+            if (const auto grid = mixer.deck(i).beatGrid(); saved && grid && file != juce::File{}) {
                 library.addTrack(file, grid->bpm, mixer.deck(i).durationSeconds());
             }
             gridTools[i]->refresh();
@@ -1395,6 +1400,7 @@ MainComponent::MainComponent()
         if (fontIndex > 0) {
             setFontChoice(fontIndex, false);
         }
+        DeckEngine::setKeepGridEdits(saved.getProperty("gridEdits", "keep").toString() != "reset");
     }
     setAudioChannels(0, 2);
     setUpControllers();
@@ -1737,6 +1743,18 @@ void MainComponent::showSettingsMenu() {
         fonts.addItem(fontNames[i], true, i == fontIndex, [this, i] { setFontChoice(i, true); });
     }
     menu.addSubMenu("Font", fonts);
+    juce::PopupMenu gridEdits;
+    gridEdits.addItem("Keep my changes (saved right away)", true, DeckEngine::keepsGridEdits(), [this] {
+        DeckEngine::setKeepGridEdits(true);
+        saveSetting("gridEdits", "keep");
+        showToast("BEAT GRID CHANGES: KEPT");
+    });
+    gridEdits.addItem("Reset when the song is reloaded, unless locked", true, !DeckEngine::keepsGridEdits(), [this] {
+        DeckEngine::setKeepGridEdits(false);
+        saveSetting("gridEdits", "reset");
+        showToast("BEAT GRID CHANGES: RESET UNLESS LOCKED");
+    });
+    menu.addSubMenu("Beat grid changes", gridEdits);
     menu.addSubMenu("Controllers", controllersMenu());
     menu.addSubMenu("Timecode vinyl / Phase", timecodeMenu());
     menu.addSeparator();

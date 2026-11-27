@@ -3,6 +3,7 @@
 #include "audio/BeatAnalysis.h"
 #include "control/T7Platter.h"
 
+#include <atomic>
 #include <juce_audio_formats/juce_audio_formats.h>
 
 #include <array>
@@ -49,6 +50,10 @@ class DeckEngine final {
     // Half (0.5) or double (2) the grid's BPM, e.g. a hip hop track read as 170 that is really 85.
     // Beat 1 stays where it is.
     bool scaleGridTempo(double factor);
+    // Settings choice. true: beat grid changes are saved right away. false: they last until the song is
+    // reloaded, and only locking the grid saves them.
+    static void setKeepGridEdits(bool keep) { keepGridEdits.store(keep); }
+    static bool keepsGridEdits() { return keepGridEdits.load(); }
     bool revertGrid();
     bool canRevertGrid() const;
     void setGridLocked(bool locked);
@@ -214,7 +219,8 @@ class DeckEngine final {
     std::array<std::optional<Loop>, 8> hotLoops{};
     std::vector<Loop> savedLoops;
     uint64_t revision = 0;
-    uint64_t jumps = 0; // counts seeks, so the mixer can smooth the join
+    uint64_t jumps = 0;
+    inline static std::atomic<bool> keepGridEdits{true}; // counts seeks, so the mixer can smooth the join
     uint64_t gridRevision = 0;
     uint64_t trackRevision = 0;
 };
