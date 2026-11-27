@@ -13,7 +13,7 @@ class T7Performance {
     void reset(FourDeckMixer& mixer);
     void handle(FourDeckMixer& mixer, const T7Packet& packet);
     Lights lights(const FourDeckMixer& mixer) const;
-    // Which deck each side controls (0/2 on the left, 1/3 on the right). SHIFT + SYNC flips it.
+    // Which deck each side controls (0/2 on the left, 1/3 on the right). switchDeck flips it.
     std::size_t target(std::size_t side) const { return active[side]; }
     void switchDeck(FourDeckMixer& mixer, std::size_t side);
 

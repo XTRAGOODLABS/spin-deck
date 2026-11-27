@@ -212,12 +212,6 @@ void T7Performance::handle(FourDeckMixer& mixer, const T7Packet& packet) {
         mixer.setEchoPaddle(index, value != 0);
         return;
     }
-    if ((status == 0x94 || status == 0x95) && note == 5) {
-        if (value) {
-            switchDeck(mixer, static_cast<std::size_t>(side)); // SHIFT + SYNC: deck 1<->3 or 2<->4
-        }
-        return;
-    }
     auto& state = decks[static_cast<std::size_t>(side)];
     auto& deck = mixer.deck(index);
     if (status <= 0x95 && status >= 0x91 && (note == 0x53 || note == 0x54)) {
@@ -339,6 +333,8 @@ void T7Performance::handle(FourDeckMixer& mixer, const T7Packet& packet) {
             }
             state.page = note - 0x0f;
         }
+    } else if (value && note == 5) {
+        mixer.setSyncLeader(index);
     } else if (value && note == 0x52) {
         deck.setKeyLock(!deck.isKeyLockEnabled());
     }

@@ -23,7 +23,9 @@ class T7Midi final : private juce::MidiInputCallback, private juce::Timer {
     // SHIFT + ASSIST: save a GOOD MIX that ends on this deck. Return true when saved.
     std::function<bool(std::size_t deck)> onSaveMix;
     void flashGoodMix(std::size_t deck);
-    // SHIFT + SYNC moved a side of the T7 to another deck (side 0 = left, deck 0..3).
+    // Flip one side of the T7 between its two decks (left: 1/3, right: 2/4). Used by the Ulanzi buttons.
+    void switchSide(std::size_t side);
+    // A side of the T7 moved to another deck (side 0 = left, deck 0..3).
     std::function<void(std::size_t side, std::size_t deck)> onDeckSwitch;
     std::size_t targetDeck(std::size_t side) const { return performance.target(side); }
     // Put both sides back on decks 1 and 2 (used when the screen goes back to two decks).

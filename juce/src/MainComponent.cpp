@@ -1037,7 +1037,7 @@ MainComponent::MainComponent()
         const auto outgoing = t7.targetDeck(0) == incoming ? t7.targetDeck(1) : t7.targetDeck(0);
         return library.quickSaveMix(outgoing, incoming);
     };
-    // SHIFT + SYNC on the T7: that side now controls deck 3 or 4 (or back to 1 or 2).
+    // Ulanzi top buttons (⌃⌥⌘1 / ⌃⌥⌘2): that side of the T7 now controls deck 3 or 4 (or back to 1 or 2).
     t7.onDeckSwitch = [this](std::size_t side, std::size_t deck) {
         if (deck >= 2 && deckCount < 4) {
             setDeckCount(4);
@@ -1363,6 +1363,9 @@ MainComponent::MainComponent()
 
 MainComponent::~MainComponent() {
     stopTimer();
+    if (auto* window = shortcutWindow.getComponent()) {
+        window->removeKeyListener(&shortcutListener);
+    }
     controllers.clear();
     t7.disconnect();
     samplerLoader.removeAllJobs(false, -1);
@@ -1702,6 +1705,9 @@ void MainComponent::showSettingsMenu() {
         keyPressed(juce::KeyPress('m', juce::ModifierKeys::commandModifier | juce::ModifierKeys::altModifier |
                 juce::ModifierKeys::ctrlModifier, 'm'));
     });
+    menu.addSeparator();
+    menu.addItem(juce::String::fromUTF8("T7 left: deck 1 / 3   \xE2\x8C\x83\xE2\x8C\xA5\xE2\x8C\x98" "1"), [this] { t7.switchSide(0); });
+    menu.addItem(juce::String::fromUTF8("T7 right: deck 2 / 4   \xE2\x8C\x83\xE2\x8C\xA5\xE2\x8C\x98" "2"), [this] { t7.switchSide(1); });
     menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(audioSettings));
 }
 
@@ -1763,8 +1769,20 @@ void MainComponent::changeMasterVolume(float delta) {
     showToast("MASTER " + juce::String(juce::roundToInt(level * 100)) + "%");
 }
 
+void MainComponent::parentHierarchyChanged() {
+    auto* top = getTopLevelComponent();
+    if (top == this || top == shortcutWindow.getComponent()) {
+        return;
+    }
+    if (auto* old = shortcutWindow.getComponent()) {
+        old->removeKeyListener(&shortcutListener);
+    }
+    shortcutWindow = top;
+    top->addKeyListener(&shortcutListener);
+}
+
 // Master volume shortcuts, meant for an app-linked Ulanzi Dial preset:
-// Control-Option-Command ] up, [ down, M mute.
+// Control-Option-Command ] up, [ down, M mute; 1 and 2 flip the T7 sides to decks 3 and 4.
 bool MainComponent::keyPressed(const juce::KeyPress& key) {
     const auto mods = key.getModifiers();
     if (!(mods.isCommandDown() && mods.isAltDown() && mods.isCtrlDown())) {
@@ -1778,6 +1796,15 @@ bool MainComponent::keyPressed(const juce::KeyPress& key) {
     }
     if (code == '[' || character == '[') {
         changeMasterVolume(-0.02f);
+        return true;
+    }
+    // Ulanzi top-left / top-right buttons: flip the T7's left side 1<->3, right side 2<->4.
+    if (code == '1' || character == '1') {
+        t7.switchSide(0);
+        return true;
+    }
+    if (code == '2' || character == '2') {
+        t7.switchSide(1);
         return true;
     }
     if (code == 'M' || code == 'm' || character == 'm') {

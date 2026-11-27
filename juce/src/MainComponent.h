@@ -158,6 +158,14 @@ class MainComponent final : public juce::AudioAppComponent, public juce::DragAnd
     void changeMasterVolume(float delta);
     void showToast(const juce::String&);
     bool keyPressed(const juce::KeyPress&) override;
+    void parentHierarchyChanged() override;
+    // Catches the Ulanzi shortcuts even when nothing inside the window has keyboard focus.
+    struct ShortcutListener final : juce::KeyListener {
+        explicit ShortcutListener(MainComponent& o) : owner(o) {}
+        bool keyPressed(const juce::KeyPress& key, juce::Component*) override { return owner.keyPressed(key); }
+        MainComponent& owner;
+    } shortcutListener{*this};
+    juce::Component::SafePointer<juce::Component> shortcutWindow;
     int themeIndex = 0;
     float volumeBeforeMute = 1.0f;
     juce::Label toast;

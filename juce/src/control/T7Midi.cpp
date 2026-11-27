@@ -203,6 +203,16 @@ void T7Midi::timerCallback() {
     }
 }
 
+void T7Midi::switchSide(std::size_t side) {
+    if (side > 1) {
+        return;
+    }
+    performance.switchDeck(mixer, side);
+    switchFlashing[side] = true;
+    switchFlashStart[side] = juce::Time::getMillisecondCounter();
+    if (onDeckSwitch) onDeckSwitch(side, performance.target(side));
+}
+
 void T7Midi::returnToFirstDecks() {
     for (std::size_t side = 0; side < 2; ++side) {
         if (performance.target(side) >= 2) {
