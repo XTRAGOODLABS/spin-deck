@@ -151,6 +151,8 @@ class CrateLibrary final : public juce::Component, public juce::FileDragAndDropT
         int keyDeck = -1;              // match the song loaded on this deck (0..3)
         std::optional<MusicalKey> key; // or this key
         bool keyNeighbours = true;     // also keys that mix well with it (Camelot +/-1 and relative)
+        bool moodShift = false;        // also the mood-shift key (Camelot +3, same letter)
+        bool energyBoost = false;      // also the energy-boost key (Camelot +7: one half-step up)
         bool active() const { return minBpm || maxBpm || keyDeck >= 0 || key; }
     };
     void setLibraryFilter(const LibraryFilter&);
@@ -284,6 +286,7 @@ class CrateLibrary final : public juce::Component, public juce::FileDragAndDropT
     void showFilterPanel();
     bool passesFilter(const CrateTrack&) const;
     std::optional<MusicalKey> deckKey(int deck) const;
+    std::optional<MusicalKey> filterTargetKey() const;
     juce::String filterSummary() const;
     juce::TextButton add{"ADD FILES"}, importPlaylist{"IMPORT PLAYLIST"}, importOneLibrary{"IMPORT ONELIBRARY"};
     juce::TextButton importMixxx{"IMPORT SPIN DECK"};

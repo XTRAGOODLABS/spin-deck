@@ -7,6 +7,19 @@
 
 namespace spindeck {
 namespace {
+// How a song's key relates to the key being filtered on, read off the Camelot wheel.
+enum class KeyRelation { none, same, match, mood, boost };
+KeyRelation keyRelation(MusicalKey target, MusicalKey song) {
+    const int distance = (camelotKey(song).getIntValue() - camelotKey(target).getIntValue() + 12) % 12;
+    if (song.major != target.major) {
+        return distance == 0 ? KeyRelation::match : KeyRelation::none; // relative major / minor
+    }
+    if (distance == 0) return KeyRelation::same;
+    if (distance == 1 || distance == 11) return KeyRelation::match;
+    if (distance == 3) return KeyRelation::mood;
+    if (distance == 7) return KeyRelation::boost;
+    return KeyRelation::none;
+}
 
 juce::String displayTitle(const juce::File& file) {
     const auto name = file.getFileNameWithoutExtension();
@@ -1292,16 +1305,21 @@ bool CrateLibrary::passesFilter(const CrateTrack& item) const {
         const double bpm = *item.bpm;
         if (!inRange(bpm) && !(f.halfDouble && (inRange(bpm * 2) || inRange(bpm / 2)))) return false;
     }
-    const auto target = f.keyDeck >= 0 ? deckKey(f.keyDeck) : f.key;
-    if (target) {
+    if (const auto target = filterTargetKey()) {
         if (!item.key) return false;
-        if (f.keyNeighbours) {
-            if (goodMixxKeyFit(*target, *item.key) < 2) return false;
-        } else if (camelotKey(*target) != camelotKey(*item.key)) {
-            return false;
+        switch (keyRelation(*target, *item.key)) {
+            case KeyRelation::same: return true;
+            case KeyRelation::match: return f.keyNeighbours;
+            case KeyRelation::mood: return f.moodShift;
+            case KeyRelation::boost: return f.energyBoost;
+            case KeyRelation::none: return false;
         }
     }
     return true;
+}
+
+std::optional<MusicalKey> CrateLibrary::filterTargetKey() const {
+    return filterState.keyDeck >= 0 ? deckKey(filterState.keyDeck) : filterState.key;
 }
 
 juce::String CrateLibrary::filterSummary() const {
@@ -1318,6 +1336,8 @@ juce::String CrateLibrary::filterSummary() const {
     } else if (f.key) {
         parts.add(camelotKey(*f.key) + (f.keyNeighbours ? " + mixes" : ""));
     }
+    if ((f.keyDeck >= 0 || f.key) && f.moodShift) parts.add("mood");
+    if ((f.keyDeck >= 0 || f.key) && f.energyBoost) parts.add("boost");
     return juce::String::fromUTF8("\xE2\x97\x8F ") + parts.joinIntoString(juce::String::fromUTF8(" \xC2\xB7 "));
 }
 
@@ -1392,6 +1412,12 @@ class FilterPanel final : public juce::Component {
         neighbours.setToggleState(f.keyNeighbours, juce::dontSendNotification);
         neighbours.onClick = [this] { apply(); };
         addAndMakeVisible(neighbours);
+        mood.setToggleState(f.moodShift, juce::dontSendNotification);
+        mood.onClick = [this] { apply(); };
+        addAndMakeVisible(mood);
+        boost.setToggleState(f.energyBoost, juce::dontSendNotification);
+        boost.onClick = [this] { apply(); };
+        addAndMakeVisible(boost);
         clear.onClick = [this] {
             minBpm.clear();
             maxBpm.clear();
@@ -1399,7 +1425,7 @@ class FilterPanel final : public juce::Component {
             apply();
         };
         addAndMakeVisible(clear);
-        setSize(320, 228);
+        setSize(340, 276);
     }
 
     void resized() override {
@@ -1418,6 +1444,8 @@ class FilterPanel final : public juce::Component {
         keyLabel.setBounds(area.removeFromTop(16));
         keys.setBounds(area.removeFromTop(28));
         neighbours.setBounds(area.removeFromTop(24));
+        mood.setBounds(area.removeFromTop(24));
+        boost.setBounds(area.removeFromTop(24));
         area.removeFromTop(4);
         clear.setBounds(area.removeFromTop(26).removeFromRight(90));
     }
@@ -1433,6 +1461,8 @@ class FilterPanel final : public juce::Component {
         f.maxBpm = number(maxBpm);
         f.halfDouble = halfDouble.getToggleState();
         f.keyNeighbours = neighbours.getToggleState();
+        f.moodShift = mood.getToggleState();
+        f.energyBoost = boost.getToggleState();
         const int id = keys.getSelectedId();
         if (id >= 10 && id < 14) f.keyDeck = id - 10;
         else if (id >= 100) f.key = keyChoices[static_cast<std::size_t>(id - 100)];
@@ -1448,7 +1478,9 @@ class FilterPanel final : public juce::Component {
     juce::ToggleButton halfDouble{"Also half / double time (85 = 170)"};
     juce::ComboBox keys;
     std::vector<MusicalKey> keyChoices;
-    juce::ToggleButton neighbours{"Include keys that mix well (+/-1, relative)"};
+    juce::ToggleButton neighbours{"Keys that mix well (+/-1, relative)  MATCH"};
+    juce::ToggleButton mood{"Mood shift (+3 on the wheel)  MOOD"};
+    juce::ToggleButton boost{"Energy boost (+7, a half-step up)  BOOST"};
     juce::TextButton clear{"CLEAR"};
 };
 }
@@ -2487,6 +2519,27 @@ void CrateLibrary::paintCell(juce::Graphics& g, int row, int column, int width, 
     if (entry.tags && entry.tags->title.isNotEmpty()) {
         title = entry.tags->title;
         artistName = entry.tags->artist.isNotEmpty() ? entry.tags->artist : artistName;
+    }
+    if (column == 1 && entry.key) {
+        // With a key filter on: MATCH / MOOD / BOOST says why this song is listed.
+        if (const auto target = filterTargetKey()) {
+            const auto relation = keyRelation(*target, *entry.key);
+            const char* label = relation == KeyRelation::mood ? "MOOD"
+                    : relation == KeyRelation::boost ? "BOOST"
+                    : relation == KeyRelation::none ? nullptr : "MATCH";
+            if (label != nullptr) {
+                const auto colour = relation == KeyRelation::mood ? juce::Colour(0xffe08a3c)
+                        : relation == KeyRelation::boost ? juce::Colour(0xffa98bf0) : juce::Colour(0xff4ade80);
+                const int tagWidth = 48;
+                const auto tag = juce::Rectangle<int>(width - tagWidth - 4, 3, tagWidth, height - 6);
+                g.setColour(colour.withAlpha(0.2f));
+                g.fillRoundedRectangle(tag.toFloat(), 3.0f);
+                g.setColour(colour);
+                g.setFont(juce::FontOptions(10.0f, juce::Font::bold));
+                g.drawText(label, tag, juce::Justification::centred);
+                width -= tagWidth + 6;
+            }
+        }
     }
     if (column == 1 && hasStems(entry.file)) {
         // A small STEMS tag: this song loads with its four stems.
