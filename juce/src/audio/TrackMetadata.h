@@ -40,7 +40,8 @@ struct TrackLoop {
 };
 
 struct TrackMetadata {
-    std::optional<TrackBeatGrid> grid;
+    std::optional<TrackBeatGrid> grid;         // the grid in use, with your edits
+    std::optional<TrackBeatGrid> analyzedGrid; // the original from analysis or import, never edited
     std::optional<double> mainCue;
     std::array<std::optional<double>, 8> cues{};
     std::array<std::optional<double>, 8> hotLoopEnds{};

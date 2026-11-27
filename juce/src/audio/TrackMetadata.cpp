@@ -101,12 +101,19 @@ std::optional<TrackMetadata> TrackMetadataStore::read(
             object->getProperty("path").toString() != track.getFullPathName()) {
         return {};
     }
-    const auto bpm = number(object->getProperty("bpm"));
-    const auto anchor = number(object->getProperty("anchorSeconds"));
-    if (bpm && *bpm >= 30 && *bpm <= 300 && anchor && *anchor >= 0) {
-        result.grid = TrackBeatGrid{*bpm, *anchor};
-        const auto downbeat = number(object->getProperty("downbeatIndex"));
-        if (const auto* values = object->getProperty("beatSeconds").getArray();
+    const auto readGrid = [&](const juce::String& prefix) -> std::optional<TrackBeatGrid> {
+        const auto key = [&](const char* name) {
+            return prefix.isEmpty() ? juce::Identifier(name)
+                                    : juce::Identifier(prefix + juce::String(name).substring(0, 1).toUpperCase() + juce::String(name).substring(1));
+        };
+        const auto bpm = number(object->getProperty(key("bpm")));
+        const auto anchor = number(object->getProperty(key("anchorSeconds")));
+        if (!(bpm && *bpm >= 30 && *bpm <= 300 && anchor && *anchor >= 0)) {
+            return std::nullopt;
+        }
+        TrackBeatGrid grid{*bpm, *anchor};
+        const auto downbeat = number(object->getProperty(key("downbeatIndex")));
+        if (const auto* values = object->getProperty(key("beatSeconds")).getArray();
                 values && downbeat && *downbeat >= 0 && *downbeat < values->size() &&
                 std::floor(*downbeat) == *downbeat &&
                 static_cast<std::size_t>(values->size()) <= TrackBeatGrid::maxMarkers) {
@@ -115,9 +122,12 @@ std::optional<TrackMetadata> TrackMetadataStore::read(
             for (const auto& value : *values) {
                 seconds.push_back(number(value).value_or(-1));
             }
-            result.grid->setMarkers(std::move(seconds), static_cast<std::size_t>(*downbeat));
+            grid.setMarkers(std::move(seconds), static_cast<std::size_t>(*downbeat));
         }
-    }
+        return grid;
+    };
+    result.grid = readGrid({});
+    result.analyzedGrid = readGrid("original");
     result.mainCue = number(object->getProperty("mainCue"));
     result.gridLocked = static_cast<bool>(object->getProperty("gridLocked"));
     if (const auto* values = object->getProperty("cues").getArray()) {
@@ -173,18 +183,28 @@ bool TrackMetadataStore::edit(const juce::File& track, const std::function<void(
     if (metadata->gridLocked) {
         object->setProperty("gridLocked", true);
     }
-    if (metadata->grid) {
-        object->setProperty("bpm", metadata->grid->bpm);
-        object->setProperty("anchorSeconds", metadata->grid->anchorSeconds);
-        if (const auto& markers = metadata->grid->markers) {
+    const auto writeGrid = [&](const juce::String& prefix, const TrackBeatGrid& grid) {
+        const auto key = [&](const char* name) {
+            return prefix.isEmpty() ? juce::Identifier(name)
+                                    : juce::Identifier(prefix + juce::String(name).substring(0, 1).toUpperCase() + juce::String(name).substring(1));
+        };
+        object->setProperty(key("bpm"), grid.bpm);
+        object->setProperty(key("anchorSeconds"), grid.anchorSeconds);
+        if (const auto& markers = grid.markers) {
             juce::Array<juce::var> seconds;
             seconds.ensureStorageAllocated(static_cast<int>(markers->seconds.size()));
             for (const auto time : markers->seconds) {
                 seconds.add(time);
             }
-            object->setProperty("beatSeconds", seconds);
-            object->setProperty("downbeatIndex", static_cast<int>(markers->downbeat));
+            object->setProperty(key("beatSeconds"), seconds);
+            object->setProperty(key("downbeatIndex"), static_cast<int>(markers->downbeat));
         }
+    };
+    if (metadata->grid) {
+        writeGrid({}, *metadata->grid);
+    }
+    if (metadata->analyzedGrid) {
+        writeGrid("original", *metadata->analyzedGrid);
     }
     juce::Array<juce::var> cues;
     for (const auto cue : metadata->cues) {

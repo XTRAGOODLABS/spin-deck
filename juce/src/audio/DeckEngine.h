@@ -50,6 +50,11 @@ class DeckEngine final {
     // Half (0.5) or double (2) the grid's BPM, e.g. a hip hop track read as 170 that is really 85.
     // Beat 1 stays where it is.
     bool scaleGridTempo(double factor);
+    // The song's original grid (from analysis or import) is kept apart from your edits.
+    bool resetGridToOriginal();
+    bool hasGridEdits() const;
+    // Make the beat nearest the playhead the start of a bar ("1"), without moving any beat lines.
+    bool setBarStartAtPlayhead();
     // Settings choice. true: beat grid changes are saved right away. false: they last until the song is
     // reloaded, and only locking the grid saves them.
     static void setKeepGridEdits(bool keep) { keepGridEdits.store(keep); }
@@ -220,6 +225,7 @@ class DeckEngine final {
     std::vector<Loop> savedLoops;
     uint64_t revision = 0;
     uint64_t jumps = 0;
+    std::optional<TrackBeatGrid> originalGrid;
     inline static std::atomic<bool> keepGridEdits{true}; // counts seeks, so the mixer can smooth the join
     uint64_t gridRevision = 0;
     uint64_t trackRevision = 0;

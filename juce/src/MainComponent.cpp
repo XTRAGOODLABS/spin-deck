@@ -148,7 +148,8 @@ DeckPanel::DeckPanel(std::size_t panelIndex, FourDeckMixer& deckMixer)
     bpm.setValue(120);
     bpm.setTextValueSuffix(" BPM");
     bpm.setTitle("Beat grid tempo");
-    bpm.setTooltip("Beat grid tempo. Drag or type a value, then SET BEAT 1 at the first downbeat.");
+    bpm.setTooltip("Beat grid tempo. Drag or type a value, then SET BEAT 1 at the first downbeat. "
+            "SET BEAT 1 moves the grid to the playhead; to only change which beat is bar 1, click the BPM number.");
     bpm.setColour(juce::Slider::trackColourId, crate::control);
     bpm.setColour(juce::Slider::backgroundColourId, crate::inset);
 
@@ -458,7 +459,7 @@ void DeckPanel::showBpmMenu() {
     const bool locked = engine.isGridLocked();
     const auto bpmText = [](double value) { return juce::String(value, value == std::round(value) ? 0 : 2); };
     juce::PopupMenu menu;
-    menu.addSectionHeader("Beat grid BPM: " + bpmText(grid->bpm));
+    menu.addSectionHeader("Beat grid: " + bpmText(grid->bpm) + " BPM" + (engine.hasGridEdits() ? " (edited)" : ""));
     const auto apply = [safe = juce::Component::SafePointer<DeckPanel>(this)](double factor) {
         if (safe != nullptr && safe->engine.scaleGridTempo(factor)) {
             if (safe->onGridChanged) safe->onGridChanged();
@@ -469,6 +470,20 @@ void DeckPanel::showBpmMenu() {
             !locked && grid->bpm / 2 >= 30, false, [apply] { apply(0.5); });
     menu.addItem("Double: " + bpmText(grid->bpm) + juce::String::fromUTF8(" \xE2\x86\x92 ") + bpmText(grid->bpm * 2),
             !locked && grid->bpm * 2 <= 300, false, [apply] { apply(2.0); });
+    menu.addSeparator();
+    menu.addItem("Set bar 1 here (beat lines stay put)", !locked, false, [apply = juce::Component::SafePointer<DeckPanel>(this)] {
+        if (apply != nullptr && apply->engine.setBarStartAtPlayhead()) {
+            if (apply->onGridChanged) apply->onGridChanged();
+            apply->timerCallback();
+        }
+    });
+    menu.addItem("Reset to original grid" + juce::String(engine.hasGridEdits() ? "" : " (no changes)"),
+            !locked && engine.hasGridEdits(), false, [safe = juce::Component::SafePointer<DeckPanel>(this)] {
+                if (safe != nullptr && safe->engine.resetGridToOriginal()) {
+                    if (safe->onGridChanged) safe->onGridChanged();
+                    safe->timerCallback();
+                }
+            });
     menu.addItem("Undo last grid change", engine.canRevertGrid(), false,
             [safe = juce::Component::SafePointer<DeckPanel>(this)] {
                 if (safe != nullptr && safe->engine.revertGrid()) {

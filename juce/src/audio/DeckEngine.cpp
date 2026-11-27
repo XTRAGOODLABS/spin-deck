@@ -92,10 +92,25 @@ bool DeckEngine::load(const juce::File& file, Overview* overview) {
             saved = metadataStore.edit(file, [&](TrackMetadata& current) {
                 if (!current.grid || current.grid->anchorSeconds >= duration) {
                     current.grid = detected;
+                    current.analyzedGrid = detected; // the original, kept apart from later edits
                 }
                 metadata = current;
             });
         }
+    } else if (!metadata.analyzedGrid) {
+        // Songs from before originals were kept: the grid they have becomes their original.
+        const auto original = *metadata.grid;
+        saved = metadataStore.edit(file, [&](TrackMetadata& current) {
+            if (!current.analyzedGrid) {
+                current.analyzedGrid = current.grid ? current.grid : std::optional{original};
+            }
+            metadata = current;
+        });
+    }
+    // "Reset unless locked": an unlocked song always starts from its original grid.
+    if (!keepGridEdits.load() && !metadata.gridLocked && metadata.analyzedGrid &&
+            metadata.analyzedGrid->anchorSeconds < duration) {
+        metadata.grid = metadata.analyzedGrid;
     }
     {
         const std::lock_guard edits(trackEditMutex);
@@ -132,6 +147,7 @@ bool DeckEngine::load(const juce::File& file, Overview* overview) {
                 savedLoops.push_back(importedLoop(range));
             }
         }
+        originalGrid = metadata.analyzedGrid;
         if (metadata.grid) {
             setGrid(std::move(*metadata.grid));
         }
@@ -633,6 +649,60 @@ bool DeckEngine::nudgeGridTempo(double bpmChange) {
         const double bar = 4 * 60 / bpm;
         while (result.anchorSeconds < 0) {
             result.anchorSeconds += bar;
+        }
+        return result;
+    });
+}
+
+bool DeckEngine::resetGridToOriginal() {
+    std::optional<TrackBeatGrid> original;
+    {
+        const std::lock_guard lock(mutex);
+        original = originalGrid;
+    }
+    if (!original) {
+        return false;
+    }
+    return editGrid([original](const TrackBeatGrid&, double) -> std::optional<TrackBeatGrid> { return *original; });
+}
+
+bool DeckEngine::hasGridEdits() const {
+    const std::lock_guard lock(mutex);
+    if (!grid || !originalGrid) {
+        return false;
+    }
+    const auto& a = *grid;
+    const auto& b = *originalGrid;
+    if (std::abs(a.bpm - b.bpm) > 1e-9 || std::abs(a.anchorSeconds - b.anchorSeconds) > 1e-9 ||
+            (a.markers == nullptr) != (b.markers == nullptr)) {
+        return true;
+    }
+    return a.markers && (a.markers->downbeat != b.markers->downbeat || a.markers->seconds != b.markers->seconds);
+}
+
+bool DeckEngine::setBarStartAtPlayhead() {
+    return editGrid([](const TrackBeatGrid& current, double playhead) -> std::optional<TrackBeatGrid> {
+        const double nearest = std::round(current.beatAt(playhead));
+        if (std::abs(std::remainder(nearest, 4.0)) < 1e-9) {
+            return {}; // already the start of a bar
+        }
+        if (current.markers) {
+            const auto& old = *current.markers;
+            const auto index = static_cast<long>(old.downbeat) + static_cast<long>(nearest);
+            if (index < 0 || index >= static_cast<long>(old.seconds.size())) {
+                return {};
+            }
+            TrackBeatGrid result(current.bpm, current.anchorSeconds);
+            if (!result.setMarkers(old.seconds, static_cast<std::size_t>(index))) {
+                return {};
+            }
+            return result;
+        }
+        // Same beat lines, same spacing: only which beat counts as "1" changes.
+        TrackBeatGrid result(current.bpm, current.timeAt(nearest));
+        const double bar = 4 * 60 / current.bpm;
+        while (result.anchorSeconds - bar >= 0) {
+            result.anchorSeconds -= bar;
         }
         return result;
     });
