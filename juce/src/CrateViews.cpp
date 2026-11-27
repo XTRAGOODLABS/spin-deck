@@ -971,6 +971,9 @@ CrateLibrary::CrateLibrary(const juce::File& metadataDirectory)
     search.setIndents(8, 6);
     search.setTitle("Search library");
     search.onTextChange = [this] { filter(); };
+    filterButton.setTooltip("Show only songs in a BPM range and/or a key that mixes with a deck.");
+    filterButton.onClick = [this] { showFilterPanel(); };
+    addAndMakeVisible(filterButton);
     add.onClick = [this] { browse(); };
     addAndMakeVisible(search);
     addChildComponent(add);
@@ -1255,9 +1258,204 @@ void CrateLibrary::loadSelected(int deck) {
 
 void CrateLibrary::setTrackContext(const FourDeckMixer::TrackContext& value) {
     if (context != value) {
+        const bool deckSongChanged = filterState.keyDeck >= 0 &&
+                context.decks[static_cast<std::size_t>(filterState.keyDeck)].file !=
+                        value.decks[static_cast<std::size_t>(filterState.keyDeck)].file;
         context = value;
         updateMixes();
+        if (deckSongChanged) {
+            filter(); // "mixes with Deck N" follows whatever is loaded there
+            filterButton.setButtonText(filterSummary());
+        }
     }
+}
+
+//==============================================================================
+// AI-written (Claude). Review before relying on it.
+// Library filter: BPM range (optionally counting half/double time) and key.
+// AI-written (Claude). End.
+std::optional<MusicalKey> CrateLibrary::deckKey(int deck) const {
+    if (!juce::isPositiveAndBelow(deck, 4)) return std::nullopt;
+    const auto& file = context.decks[static_cast<std::size_t>(deck)].file;
+    if (file == juce::File{}) return std::nullopt;
+    const auto found = std::find_if(tracks.begin(), tracks.end(), [&](const auto& t) { return t.file == file; });
+    return found != tracks.end() ? found->key : std::nullopt;
+}
+
+bool CrateLibrary::passesFilter(const CrateTrack& item) const {
+    const auto& f = filterState;
+    if (f.minBpm || f.maxBpm) {
+        if (!item.bpm) return false;
+        const auto inRange = [&](double value) {
+            return (!f.minBpm || value >= *f.minBpm - 0.005) && (!f.maxBpm || value <= *f.maxBpm + 0.005);
+        };
+        const double bpm = *item.bpm;
+        if (!inRange(bpm) && !(f.halfDouble && (inRange(bpm * 2) || inRange(bpm / 2)))) return false;
+    }
+    const auto target = f.keyDeck >= 0 ? deckKey(f.keyDeck) : f.key;
+    if (target) {
+        if (!item.key) return false;
+        if (f.keyNeighbours) {
+            if (goodMixxKeyFit(*target, *item.key) < 2) return false;
+        } else if (camelotKey(*target) != camelotKey(*item.key)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+juce::String CrateLibrary::filterSummary() const {
+    const auto& f = filterState;
+    if (!f.active()) return "FILTER: BPM / KEY";
+    juce::StringArray parts;
+    const auto num = [](double v) { return juce::String(v, v == std::round(v) ? 0 : 1); };
+    if (f.minBpm && f.maxBpm) parts.add(num(*f.minBpm) + "-" + num(*f.maxBpm) + " BPM");
+    else if (f.minBpm) parts.add(num(*f.minBpm) + "+ BPM");
+    else if (f.maxBpm) parts.add("under " + num(*f.maxBpm) + " BPM");
+    if (f.keyDeck >= 0) {
+        const auto k = deckKey(f.keyDeck);
+        parts.add("key of deck " + juce::String(f.keyDeck + 1) + (k ? " (" + camelotKey(*k) + ")" : juce::String{}));
+    } else if (f.key) {
+        parts.add(camelotKey(*f.key) + (f.keyNeighbours ? " + mixes" : ""));
+    }
+    return juce::String::fromUTF8("\xE2\x97\x8F ") + parts.joinIntoString(juce::String::fromUTF8(" \xC2\xB7 "));
+}
+
+void CrateLibrary::setLibraryFilter(const LibraryFilter& value) {
+    filterState = value;
+    filterButton.setButtonText(filterSummary());
+    filterButton.setToggleState(filterState.active(), juce::dontSendNotification);
+    filter();
+}
+
+namespace {
+class FilterPanel final : public juce::Component {
+  public:
+    FilterPanel(CrateLibrary& libraryIn, const FourDeckMixer::TrackContext& contextIn, int decks)
+        : library(libraryIn), context(contextIn), deckCount(decks) {
+        const auto f = library.libraryFilter();
+        for (auto* label : {&bpmLabel, &keyLabel, &toLabel}) {
+            label->setColour(juce::Label::textColourId, crate::muted);
+            label->setFont(juce::FontOptions(12.0f, juce::Font::bold));
+            addAndMakeVisible(*label);
+        }
+        for (auto* editor : {&minBpm, &maxBpm}) {
+            editor->setInputRestrictions(6, "0123456789.");
+            editor->setJustification(juce::Justification::centred);
+            editor->onTextChange = [this] { apply(); };
+            addAndMakeVisible(*editor);
+        }
+        minBpm.setTextToShowWhenEmpty("from", crate::muted);
+        maxBpm.setTextToShowWhenEmpty("to", crate::muted);
+        if (f.minBpm) minBpm.setText(juce::String(*f.minBpm, 1), false);
+        if (f.maxBpm) maxBpm.setText(juce::String(*f.maxBpm, 1), false);
+        halfDouble.setToggleState(f.halfDouble, juce::dontSendNotification);
+        halfDouble.onClick = [this] { apply(); };
+        addAndMakeVisible(halfDouble);
+        for (int d = 0; d < deckCount; ++d) {
+            auto& button = near[static_cast<std::size_t>(d)];
+            const auto bpm = context.decks[static_cast<std::size_t>(d)].bpm;
+            button.setButtonText("DECK " + juce::String(d + 1) + (bpm ? " " + juce::String(*bpm, 0) : juce::String{}));
+            button.setTooltip("BPM within 4% of the song on deck " + juce::String(d + 1));
+            button.setEnabled(bpm.has_value());
+            button.onClick = [this, bpm] {
+                if (!bpm) return;
+                minBpm.setText(juce::String(*bpm * 0.96, 1), false);
+                maxBpm.setText(juce::String(*bpm * 1.04, 1), false);
+                apply();
+            };
+            addAndMakeVisible(button);
+        }
+        // Key list: any, a deck's song, or one of the 24 keys in Camelot order.
+        keys.addItem("Any key", 1);
+        for (int d = 0; d < deckCount; ++d) keys.addItem("Mixes with deck " + juce::String(d + 1), 10 + d);
+        keys.addSeparator();
+        std::vector<MusicalKey> all;
+        for (int tonic = 0; tonic < 12; ++tonic) for (bool major : {false, true}) all.push_back({tonic, major});
+        std::sort(all.begin(), all.end(), [](const auto& a, const auto& b) {
+            const auto ca = camelotKey(a), cb = camelotKey(b);
+            return ca.getIntValue() != cb.getIntValue() ? ca.getIntValue() < cb.getIntValue() : ca < cb;
+        });
+        for (std::size_t i = 0; i < all.size(); ++i) {
+            keyChoices.push_back(all[i]);
+            keys.addItem(camelotKey(all[i]) + "   " + crate::keyName(all[i]), 100 + static_cast<int>(i));
+        }
+        int selected = 1;
+        if (f.keyDeck >= 0) selected = 10 + f.keyDeck;
+        else if (f.key) {
+            for (std::size_t i = 0; i < keyChoices.size(); ++i)
+                if (camelotKey(keyChoices[i]) == camelotKey(*f.key)) selected = 100 + static_cast<int>(i);
+        }
+        keys.setSelectedId(selected, juce::dontSendNotification);
+        keys.onChange = [this] { apply(); };
+        addAndMakeVisible(keys);
+        neighbours.setToggleState(f.keyNeighbours, juce::dontSendNotification);
+        neighbours.onClick = [this] { apply(); };
+        addAndMakeVisible(neighbours);
+        clear.onClick = [this] {
+            minBpm.clear();
+            maxBpm.clear();
+            keys.setSelectedId(1, juce::dontSendNotification);
+            apply();
+        };
+        addAndMakeVisible(clear);
+        setSize(320, 228);
+    }
+
+    void resized() override {
+        auto area = getLocalBounds().reduced(10);
+        bpmLabel.setBounds(area.removeFromTop(16));
+        auto row = area.removeFromTop(28);
+        minBpm.setBounds(row.removeFromLeft(80));
+        toLabel.setBounds(row.removeFromLeft(30));
+        maxBpm.setBounds(row.removeFromLeft(80));
+        area.removeFromTop(4);
+        auto quick = area.removeFromTop(24);
+        const int w = deckCount > 0 ? quick.getWidth() / deckCount : quick.getWidth();
+        for (int d = 0; d < deckCount; ++d) near[static_cast<std::size_t>(d)].setBounds(quick.removeFromLeft(w).reduced(1, 0));
+        halfDouble.setBounds(area.removeFromTop(24));
+        area.removeFromTop(6);
+        keyLabel.setBounds(area.removeFromTop(16));
+        keys.setBounds(area.removeFromTop(28));
+        neighbours.setBounds(area.removeFromTop(24));
+        area.removeFromTop(4);
+        clear.setBounds(area.removeFromTop(26).removeFromRight(90));
+    }
+
+  private:
+    void apply() {
+        CrateLibrary::LibraryFilter f;
+        const auto number = [](const juce::TextEditor& e) -> std::optional<double> {
+            const auto v = e.getText().trim().getDoubleValue();
+            return e.getText().trim().isNotEmpty() && v > 0 ? std::optional{v} : std::nullopt;
+        };
+        f.minBpm = number(minBpm);
+        f.maxBpm = number(maxBpm);
+        f.halfDouble = halfDouble.getToggleState();
+        f.keyNeighbours = neighbours.getToggleState();
+        const int id = keys.getSelectedId();
+        if (id >= 10 && id < 14) f.keyDeck = id - 10;
+        else if (id >= 100) f.key = keyChoices[static_cast<std::size_t>(id - 100)];
+        library.setLibraryFilter(f);
+    }
+
+    CrateLibrary& library;
+    FourDeckMixer::TrackContext context;
+    int deckCount;
+    juce::Label bpmLabel{{}, "BPM"}, keyLabel{{}, "KEY"}, toLabel{{}, "to"};
+    juce::TextEditor minBpm, maxBpm;
+    std::array<juce::TextButton, 4> near;
+    juce::ToggleButton halfDouble{"Also half / double time (85 = 170)"};
+    juce::ComboBox keys;
+    std::vector<MusicalKey> keyChoices;
+    juce::ToggleButton neighbours{"Include keys that mix well (+/-1, relative)"};
+    juce::TextButton clear{"CLEAR"};
+};
+}
+
+void CrateLibrary::showFilterPanel() {
+    auto panel = std::make_unique<FilterPanel>(*this, context, visibleDecks);
+    juce::CallOutBox::launchAsynchronously(std::move(panel), filterButton.getScreenBounds(), nullptr);
 }
 
 int CrateLibrary::MixList::getNumRows() {
@@ -2023,9 +2221,9 @@ void CrateLibrary::filter() {
     const auto addMatch = [&](std::size_t index) {
         const auto& item = tracks[index];
         const auto matches = [&](const juce::String& value) { return value.containsIgnoreCase(query); };
-        if (query.isEmpty() || matches(item.file.getFileName()) ||
+        if ((query.isEmpty() || matches(item.file.getFileName()) ||
                 (item.tags && (matches(item.tags->title) || matches(item.tags->artist) ||
-                        matches(item.tags->album) || matches(item.tags->genre)))) {
+                        matches(item.tags->album) || matches(item.tags->genre)))) && passesFilter(item)) {
             results.push_back(index);
         }
     };
@@ -2492,6 +2690,8 @@ void CrateLibrary::resized() {
     sidebar = area.removeFromLeft(228);
     auto side = sidebar.reduced(8, 8);
     search.setBounds(side.removeFromTop(28));
+    side.removeFromTop(4);
+    filterButton.setBounds(side.removeFromTop(24));
     side.removeFromTop(6);
     auto bottom = side.removeFromBottom(26);
     const int visibleRoutes = static_cast<int>(std::count_if(route.begin(), route.end(),

@@ -144,6 +144,17 @@ class CrateLibrary final : public juce::Component, public juce::FileDragAndDropT
     explicit CrateLibrary(const juce::File& metadataDirectory);
     ~CrateLibrary() override;
     void setTrackContext(const FourDeckMixer::TrackContext&);
+    // The FILTER button under the search box: narrow the list by BPM range and key.
+    struct LibraryFilter {
+        std::optional<double> minBpm, maxBpm;
+        bool halfDouble = true;        // also count songs at half or double the BPM
+        int keyDeck = -1;              // match the song loaded on this deck (0..3)
+        std::optional<MusicalKey> key; // or this key
+        bool keyNeighbours = true;     // also keys that mix well with it (Camelot +/-1 and relative)
+        bool active() const { return minBpm || maxBpm || keyDeck >= 0 || key; }
+    };
+    void setLibraryFilter(const LibraryFilter&);
+    const LibraryFilter& libraryFilter() const { return filterState; }
     void moveSelection(int delta);
     void loadSelected(int deck);
     void addTrack(const juce::File&, std::optional<double> bpm = {}, double seconds = 0,
@@ -268,6 +279,12 @@ class CrateLibrary final : public juce::Component, public juce::FileDragAndDropT
     std::vector<CratePlaylist> playlists;
     std::vector<std::size_t> results;
     juce::TextEditor search;
+    juce::TextButton filterButton{"FILTER: BPM / KEY"};
+    LibraryFilter filterState;
+    void showFilterPanel();
+    bool passesFilter(const CrateTrack&) const;
+    std::optional<MusicalKey> deckKey(int deck) const;
+    juce::String filterSummary() const;
     juce::TextButton add{"ADD FILES"}, importPlaylist{"IMPORT PLAYLIST"}, importOneLibrary{"IMPORT ONELIBRARY"};
     juce::TextButton importMixxx{"IMPORT SPIN DECK"};
     juce::ComboBox playlistPicker;
