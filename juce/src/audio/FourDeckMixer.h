@@ -63,6 +63,11 @@ class FourDeckMixer final : public juce::AudioSource {
     // Master output volume (speakers, outputs 1-2). Recording, booth and headphones are not affected.
     void setMasterVolume(float level);
     float masterVolume() const;
+    // External mixer mode (a DJ mixer with a USB sound card, like the Rane MP2015): each deck goes out on its
+    // own outputs (deck 1 on 1-2, deck 2 on 3-4, deck 3 on 5-6, deck 4 on 7-8) with no EQ, faders or
+    // crossfader in Spin Deck; samplers go out on 9-10. The hardware mixer does the mixing.
+    void setExternalMixing(bool enabled);
+    bool isExternalMixing() const;
     juce::Result startRecording(const juce::File& file);
     void stopRecording();
     bool isRecording() const;
@@ -215,6 +220,7 @@ class FourDeckMixer final : public juce::AudioSource {
     int echoDivision = 0;
     bool crossfaderCut = false, splitCue = false;
     bool firstMixBlock = true;
+    bool externalMixing = false;
     juce::SmoothedValue<float> headphoneBlend{0}, splitBlend{0};
     std::size_t leader = 0;
     double deviceRate = 0;

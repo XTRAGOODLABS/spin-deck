@@ -1420,6 +1420,9 @@ MainComponent::MainComponent()
     setAudioChannels(0, 2);
     setUpControllers();
     restoreTimecode();
+    if (juce::JSON::parse(settingsFile()).getProperty("mixing", "internal").toString() == "external") {
+        setExternalMixing(true, false);
+    }
     startTimerHz(24);
 }
 
@@ -1439,6 +1442,15 @@ MainComponent::~MainComponent() {
 }
 
 void MainComponent::timerCallback() {
+    if (mixer.isExternalMixing()) {
+        // A different audio device was picked: open its deck outputs too.
+        if (auto* device = deviceManager.getCurrentAudioDevice(); device != nullptr && device->getName() != externalMixerDevice) {
+            externalMixerDevice = device->getName();
+            openMixerOutputs();
+        }
+    } else {
+        externalMixerDevice.clear();
+    }
     rememberT7AudioTiming();
     if (mixer.isRecording() && mixer.recordingDroppedAudio()) {
         mixer.stopRecording();
@@ -1772,6 +1784,15 @@ void MainComponent::showSettingsMenu() {
     menu.addSubMenu("Beat grid changes", gridEdits);
     menu.addSubMenu("Controllers", controllersMenu());
     menu.addSubMenu("Timecode vinyl / Phase", timecodeMenu());
+    juce::PopupMenu mixing;
+    const bool external = mixer.isExternalMixing();
+    mixing.addItem("In Spin Deck (normal, and for the T7)", true, !external, [this] { setExternalMixing(false, true); });
+    mixing.addItem("On an external mixer (Rane MP2015 and other DJ mixers with USB)", true, external,
+            [this] { setExternalMixing(true, true); });
+    mixing.addSeparator();
+    mixing.addItem("External: deck 1 > outputs 1-2, deck 2 > 3-4, deck 3 > 5-6, deck 4 > 7-8, samplers > 9-10",
+            false, false, nullptr);
+    menu.addSubMenu(juce::String("Mixing: ") + (external ? "external mixer" : "in Spin Deck"), mixing);
     menu.addSeparator();
     menu.addItem(juce::String::fromUTF8("Master volume up   \xE2\x8C\x83\xE2\x8C\xA5\xE2\x8C\x98]"), [this] { changeMasterVolume(0.02f); });
     menu.addItem(juce::String::fromUTF8("Master volume down   \xE2\x8C\x83\xE2\x8C\xA5\xE2\x8C\x98["), [this] { changeMasterVolume(-0.02f); });
@@ -1902,7 +1923,7 @@ void MainComponent::showAudioSettings() {
         return;
     }
     auto selector = std::make_unique<juce::AudioDeviceSelectorComponent>(
-            deviceManager, 0, 0, 2, 6, false, false, true, false);
+            deviceManager, 0, 0, 2, 10, false, false, true, false);
     selector->setSize(480, 360);
     juce::DialogWindow::LaunchOptions dialog;
     dialog.content.setOwned(selector.release());
@@ -2277,6 +2298,43 @@ bool MainComponent::openAudioInputs() {
         }
     }
     return true;
+}
+
+void MainComponent::openMixerOutputs() {
+    auto setup = deviceManager.getAudioDeviceSetup();
+    int available = 2;
+    if (auto* device = deviceManager.getCurrentAudioDevice()) {
+        available = device->getOutputChannelNames().size();
+    }
+    setup.useDefaultOutputChannels = false;
+    setup.outputChannels.clear();
+    setup.outputChannels.setRange(0, std::max(2, std::min(10, available)), true);
+    const auto error = deviceManager.setAudioDeviceSetup(setup, true);
+    if (error.isNotEmpty()) {
+        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon, "Mixer outputs", error);
+    }
+}
+
+void MainComponent::setExternalMixing(bool enabled, bool save) {
+    mixer.setExternalMixing(enabled);
+    if (save) {
+        saveSetting("mixing", enabled ? "external" : "internal");
+    }
+    if (!enabled) {
+        if (save) showToast("MIXING IN SPIN DECK");
+        return;
+    }
+    openMixerOutputs();
+    int outputs = 0;
+    juce::String name = "the audio device";
+    if (auto* device = deviceManager.getCurrentAudioDevice()) {
+        outputs = device->getActiveOutputChannels().countNumberOfSetBits();
+        name = device->getName();
+    }
+    if (save || outputs < 4) {
+        showToast(outputs >= 4 ? "EXTERNAL MIXER: " + juce::String(outputs / 2) + " DECK OUTPUTS ON " + name.toUpperCase()
+                               : "EXTERNAL MIXER: PICK THE MIXER IN SETTINGS > AUDIO OUTPUT");
+    }
 }
 
 void MainComponent::setTimecodeInput(int deck, int firstChannel, bool save) {

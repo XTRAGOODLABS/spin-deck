@@ -129,6 +129,16 @@ void FourDeckMixer::setBoothLevel(float level) {
     boothLevel = std::clamp(level, 0.0f, 1.0f);
 }
 
+void FourDeckMixer::setExternalMixing(bool enabled) {
+    const std::lock_guard lock(mutex);
+    externalMixing = enabled;
+}
+
+bool FourDeckMixer::isExternalMixing() const {
+    const std::lock_guard lock(mutex);
+    return externalMixing;
+}
+
 juce::Result FourDeckMixer::startRecording(const juce::File& file) {
     double rate;
     {
@@ -535,6 +545,8 @@ std::array<FourDeckMixer::SamplerState, 8> FourDeckMixer::samplerState() const {
 
 void FourDeckMixer::mixSamplers(const juce::AudioSourceChannelInfo& output) {
     const int channelsOut = std::min(2, output.buffer->getNumChannels());
+    // On an external mixer the samplers get their own outputs 9-10 (the MP2015's USB AUX / Session In).
+    const int firstOut = externalMixing && output.buffer->getNumChannels() >= 10 ? 8 : 0;
     const auto ramp = static_cast<float>(1 / (deviceRate * 0.002));
     for (auto& clip : samplers) {
         if (!clip.held && clip.gain <= 0) {
@@ -552,7 +564,7 @@ void FourDeckMixer::mixSamplers(const juce::AudioSourceChannelInfo& output) {
                     static_cast<float>((clip.audio.getNumSamples() - 1 - clip.frame) / stride) * ramp);
             for (int channel = 0; channel < channelsOut; ++channel) {
                 const auto* pcm = clip.audio.getReadPointer(channel);
-                output.buffer->addSample(channel, output.startSample + i,
+                output.buffer->addSample(firstOut + channel, output.startSample + i,
                         std::lerp(pcm[frame], pcm[frame + 1], fraction) * clip.gain * tail * 0.35f);
             }
             clip.frame += stride;
@@ -844,6 +856,19 @@ void FourDeckMixer::mixDeck(std::size_t index, const juce::AudioSourceChannelInf
             continuity();
             effects(deckBuffer);
         }
+        if (externalMixing) {
+            // The deck goes out on its own outputs, untouched: the hardware mixer has the EQ and faders.
+            const int first = 2 * static_cast<int>(index);
+            for (int sideIndex = 0; sideIndex < 2 && first + 1 < outputs; ++sideIndex) {
+                auto* destination = out.buffer->getWritePointer(first + sideIndex, out.startSample + offset);
+                const auto* samples = deckBuffer.getReadPointer(sideIndex);
+                for (int i = 0; i < count; ++i) {
+                    destination[i] += samples[i];
+                    channel.peak = std::max(channel.peak, std::abs(samples[i]));
+                }
+            }
+            continue;
+        }
         std::array<float, 512> masterRamp, cueRamp;
         for (int frame = 0; frame < count; ++frame) {
             masterRamp[frame] = channel.masterLevel.getNextValue();
@@ -969,6 +994,30 @@ void FourDeckMixer::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
     }
     mixSamplers(bufferToFill);
     const auto channelsOut = bufferToFill.buffer->getNumChannels();
+    if (externalMixing) {
+        // No master, headphone or booth mix here. A recording gets every deck and the samplers added up,
+        // without the hardware mixer's faders.
+        if (recorder && !recordingOverflow) {
+            std::array<float, 512> sumL, sumR;
+            for (int start = 0; start < bufferToFill.numSamples && !recordingOverflow; start += 512) {
+                const int count = std::min(512, bufferToFill.numSamples - start);
+                std::fill_n(sumL.begin(), count, 0.0f);
+                std::fill_n(sumR.begin(), count, 0.0f);
+                for (int pair = 0; pair + 1 < channelsOut && pair < 10; pair += 2) {
+                    const auto* l = bufferToFill.buffer->getReadPointer(pair, bufferToFill.startSample + start);
+                    const auto* r = bufferToFill.buffer->getReadPointer(pair + 1, bufferToFill.startSample + start);
+                    for (int i = 0; i < count; ++i) {
+                        sumL[static_cast<std::size_t>(i)] += l[i];
+                        sumR[static_cast<std::size_t>(i)] += r[i];
+                    }
+                }
+                const std::array<const float*, 2> sum{sumL.data(), sumR.data()};
+                recordingOverflow = !recorder->write(sum.data(), count);
+            }
+        }
+        firstMixBlock = false;
+        return;
+    }
     if (channelsOut >= 2) {
         // Talkover lowers the music by about 12 dB; the mic is added on top, so it is also recorded.
         if (firstMixBlock) {

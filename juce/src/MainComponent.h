@@ -254,6 +254,10 @@ class MainComponent final : public juce::AudioAppComponent, public juce::DragAnd
     void setTimecodeType(const juce::String& type);
     bool openAudioInputs();
     void restoreTimecode();
+    // Settings > Mixing: in Spin Deck, or on an external mixer (each deck to its own outputs).
+    void setExternalMixing(bool enabled, bool save);
+    void openMixerOutputs();
+    juce::String externalMixerDevice;
 };
 
 }
