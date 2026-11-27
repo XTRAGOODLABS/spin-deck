@@ -29,8 +29,14 @@ fi
 PY="$HOME_DIR/venv/bin/python"
 
 echo "STATUS Downloading the stem splitter (about 2 GB)"
+# Intel Macs: PyTorch's last Intel Mac release is 2.2.2, which needs NumPy 1.x.
+if [ "$(uname -m)" = "x86_64" ]; then
+  TORCH=("torch==2.2.2" "torchaudio==2.2.2" "numpy<2")
+else
+  TORCH=("torch==2.5.1" "torchaudio==2.5.1")
+fi
 "$UV" pip install --python "$PY" \
-  "torch==2.5.1" "torchaudio==2.5.1" "demucs==4.0.1" \
+  "${TORCH[@]}" "demucs==4.0.1" \
   "imageio-ffmpeg" "soundfile" >/dev/null 2>&1 || fail "could not download the stem splitter"
 
 echo "STATUS Downloading the splitting model"

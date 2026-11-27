@@ -1,5 +1,10 @@
 cmake_minimum_required(VERSION 3.25)
 
+# Oldest macOS Spin Deck runs on. Without this the app only opens on the macOS version it was built on.
+if(NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Oldest macOS Spin Deck runs on" FORCE)
+endif()
+
 project(SpinDeckJuce VERSION 3.0.0 LANGUAGES C CXX OBJCXX)
 
 include(FetchContent)
@@ -8,6 +13,8 @@ include(CTest)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+# arm64 for Apple Silicon (the default). For the Intel build, configure a separate folder with
+# -DCMAKE_OSX_ARCHITECTURES=x86_64 (see PROJECT_STATUS.md).
 set(CMAKE_OSX_ARCHITECTURES arm64 CACHE STRING "Apple architectures")
 
 FetchContent_Declare(

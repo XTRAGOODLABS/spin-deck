@@ -163,6 +163,19 @@ Checked by rendering the window at 1672×941, 1400×900 (BIG LIBRARY) and 1000×
 
 > End of AI-written section.
 
+## Intel Mac build
+
+> AI-written (Claude) section. Review before relying on it.
+
+- The app is built for macOS 12 (Monterey) and newer on both chip types (`CMAKE_OSX_DEPLOYMENT_TARGET` 12.0). Before this, it only opened on the macOS version it was built on.
+- Intel build, in its own folder so the Apple Silicon build is untouched:
+  `cmake -S juce -B juce/build-intel -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=x86_64 && cmake --build juce/build-intel --parallel 6`
+  The app is `juce/build-intel/SpinDeck_artefacts/Release/Spin Deck.app`. On an Apple Silicon Mac it runs through Rosetta for a quick check.
+- Make Stems on Intel installs PyTorch 2.2.2 (the last Intel Mac release) with NumPy 1.x; Apple Silicon keeps 2.5.1.
+- Not yet run on a real Intel Mac.
+
+> End of AI-written section.
+
 ## Blockers and unverified areas
 
 - An attended Apple Silicon test verified both T7 motors starting and stopping, and the listener confirmed audible left-platter scratching through the T7 stereo output. The host-side scratch onset median was 4.23 ms from the latest MIDI angle receipt to scheduled CoreAudio output. Physical-motion-to-analog latency and right-platter listening still need direct measurement. ENABLE T7 selects its master and headphone outputs. AUDIO exposes the CoreAudio device and channel selection.
