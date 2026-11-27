@@ -40,18 +40,71 @@ bool T7Performance::accepts(int status, int note) {
 
 void T7Performance::reset(FourDeckMixer& mixer) {
     for (std::size_t i = 0; i < decks.size(); ++i) {
-        mixer.setEchoPaddle(i, false);
-        mixer.setTempoBend(i, -1, false);
-        mixer.setTempoBend(i, 1, false);
+        const auto deck = active[i];
+        mixer.setEchoPaddle(deck, false);
+        mixer.setTempoBend(deck, -1, false);
+        mixer.setTempoBend(deck, 1, false);
         for (std::size_t pad = 0; pad < 8; ++pad) {
-            mixer.deck(i).hotCuePad(pad, false);
+            mixer.deck(deck).hotCuePad(pad, false);
             mixer.holdSampler(pad, false, static_cast<unsigned>(i + 1));
         }
         if (decks[i].rollPad >= 0) {
-            mixer.deck(i).endLoopRoll();
+            mixer.deck(deck).endLoopRoll();
         }
     }
     *this = {};
+    mixer.setT7Target(0, 0);
+    mixer.setT7Target(1, 1);
+}
+
+void T7Performance::switchDeck(FourDeckMixer& mixer, std::size_t side) {
+    auto& state = decks[side];
+    const auto old = active[side];
+    // Let go of anything still held on the deck being left.
+    mixer.setEchoPaddle(old, false);
+    mixer.setTempoBend(old, -1, false);
+    mixer.setTempoBend(old, 1, false);
+    for (std::size_t pad = 0; pad < 8; ++pad) {
+        mixer.deck(old).hotCuePad(pad, false);
+    }
+    if (state.rollPad >= 0) {
+        mixer.deck(old).endLoopRoll();
+        state.rollPad = -1;
+    }
+    active[side] = old == side ? side + 2 : side;
+    mixer.setT7Target(side, active[side]);
+    pickup[side].fill(true);
+    lastPosition[side].fill(-1.0f);
+}
+
+bool T7Performance::pickedUp(FourDeckMixer& mixer, std::size_t side, int control, float position) {
+    if (control < 0 || control >= 9 || !pickup[side][static_cast<std::size_t>(control)]) {
+        return true;
+    }
+    const auto deck = active[side];
+    float current = 0.5f;
+    if (control == 8) {
+        current = static_cast<float>((1 - mixer.tempoControl(deck).position) * 0.5);
+    } else {
+        const auto strip = mixer.mixControls().strips[deck];
+        switch (static_cast<FourDeckMixer::ChannelControl>(control)) {
+            case FourDeckMixer::ChannelControl::fader: current = strip.fader; break;
+            case FourDeckMixer::ChannelControl::filter: current = strip.filter; break;
+            case FourDeckMixer::ChannelControl::trim: current = strip.trim; break;
+            case FourDeckMixer::ChannelControl::low: current = strip.eq[0]; break;
+            case FourDeckMixer::ChannelControl::mid: current = strip.eq[1]; break;
+            case FourDeckMixer::ChannelControl::high: current = strip.eq[2]; break;
+        }
+    }
+    auto& last = lastPosition[side][static_cast<std::size_t>(control)];
+    const bool close = std::abs(position - current) < 0.03f;
+    const bool crossed = last >= 0 && (last - current) * (position - current) <= 0;
+    last = position;
+    if (close || crossed) {
+        pickup[side][static_cast<std::size_t>(control)] = false;
+        return true;
+    }
+    return false;
 }
 
 void T7Performance::handle(FourDeckMixer& mixer, const T7Packet& packet) {
@@ -84,7 +137,7 @@ void T7Performance::handle(FourDeckMixer& mixer, const T7Packet& packet) {
             if (value) {
                 const auto index = static_cast<std::size_t>(channel - 1);
                 const int direction = value < 64 ? 1 : -1;
-                if (!mixer.deck(index).adjustLoop(direction, status == 0xb4 || status == 0xb5)) {
+                if (!mixer.deck(active[index]).adjustLoop(direction, status == 0xb4 || status == 0xb5)) {
                     auto& state = decks[index];
                     state.loopSize = std::clamp(state.loopSize + direction, 0,
                             static_cast<int>(loopBeats.size()) - 1);
@@ -98,11 +151,16 @@ void T7Performance::handle(FourDeckMixer& mixer, const T7Packet& packet) {
             return;
         }
         const float position = static_cast<float>((msb[channel][control] << 7) | value) / 16383;
-        if (channel != 0 && control == 8) {
-            mixer.setTempoPosition(static_cast<std::size_t>(channel - 1), 1 - 2 * position);
-        } else if (channel != 0) {
-            mixer.setChannelControl(channel - 1,
-                    static_cast<FourDeckMixer::ChannelControl>(control), position);
+        if (channel != 0) {
+            const auto side = static_cast<std::size_t>(channel - 1);
+            if (!pickedUp(mixer, side, control, position)) {
+                return; // waiting for the fader or knob to reach this deck's setting
+            }
+            if (control == 8) {
+                mixer.setTempoPosition(active[side], 1 - 2 * position);
+            } else {
+                mixer.setChannelControl(active[side], static_cast<FourDeckMixer::ChannelControl>(control), position);
+            }
         } else if (control == 5) {
             mixer.setHeadphoneMix(position);
         } else {
@@ -127,11 +185,11 @@ void T7Performance::handle(FourDeckMixer& mixer, const T7Packet& packet) {
             if (shifted) {
                 effect = (effect + 1) % 5;
             }
-            const auto settings = mixer.echoControls().strips[index];
+            const auto settings = mixer.echoControls().strips[active[index]];
             if (!shifted && state.effectSlot == slot && settings.effect == static_cast<FourDeckMixer::Effect>(effect)) {
-                mixer.toggleEchoArmed(index);
+                mixer.toggleEchoArmed(active[index]);
             } else {
-                mixer.selectEffect(index, static_cast<FourDeckMixer::Effect>(effect), true);
+                mixer.selectEffect(active[index], static_cast<FourDeckMixer::Effect>(effect), true);
             }
             state.effectSlot = slot;
         } else if (note == 2 && value) {
@@ -147,17 +205,24 @@ void T7Performance::handle(FourDeckMixer& mixer, const T7Packet& packet) {
         }
         return;
     }
-    const int index = status == 0x91 || status == 0x94 || status == 0x96 ? 0 : 1;
+    const int side = status == 0x91 || status == 0x94 || status == 0x96 ? 0 : 1;
+    const auto index = active[static_cast<std::size_t>(side)]; // the deck this side controls
     if (note >= 0x55 && note <= 0x58 &&
             (status == 0x91 || status == 0x92 || status == 0x94 || status == 0x95)) {
-        mixer.setEchoPaddle(static_cast<std::size_t>(index), value != 0);
+        mixer.setEchoPaddle(index, value != 0);
         return;
     }
-    auto& state = decks[index];
+    if ((status == 0x94 || status == 0x95) && note == 5) {
+        if (value) {
+            switchDeck(mixer, static_cast<std::size_t>(side)); // SHIFT + SYNC: deck 1<->3 or 2<->4
+        }
+        return;
+    }
+    auto& state = decks[static_cast<std::size_t>(side)];
     auto& deck = mixer.deck(index);
     if (status <= 0x95 && status >= 0x91 && (note == 0x53 || note == 0x54)) {
         const bool shifted = status == 0x94 || status == 0x95;
-        mixer.setTempoBend(static_cast<std::size_t>(index), note == 0x53 ? 1 : -1, !shifted && value != 0);
+        mixer.setTempoBend(index, note == 0x53 ? 1 : -1, !shifted && value != 0);
         if (shifted && note == 0x54 && value != 0) {
             deck.setQuantize(!deck.isQuantizeEnabled());
         }
@@ -199,7 +264,7 @@ void T7Performance::handle(FourDeckMixer& mixer, const T7Packet& packet) {
         }
         if (state.page == 3 || value == 0) {
             mixer.holdSampler(static_cast<std::size_t>(pad), state.page == 3 && value != 0,
-                    static_cast<unsigned>(index + 1));
+                    static_cast<unsigned>(side + 1));
         }
         if (state.page == 6 && pad == 0) {
             mixer.setEchoPaddle(index, value != 0);
@@ -246,7 +311,7 @@ void T7Performance::handle(FourDeckMixer& mixer, const T7Packet& packet) {
                     case 0: deck.shiftKey(-1); break;
                     case 1: deck.shiftKey(1); break;
                     case 2: deck.resetKey(); break;
-                    case 3: mixer.matchDeckKey(static_cast<std::size_t>(index)); break;
+                    case 3: mixer.matchDeckKey(index); break;
                 }
                 break;
             case 4:
@@ -274,8 +339,6 @@ void T7Performance::handle(FourDeckMixer& mixer, const T7Packet& packet) {
             }
             state.page = note - 0x0f;
         }
-    } else if (value && note == 5) {
-        mixer.setSyncLeader(index);
     } else if (value && note == 0x52) {
         deck.setKeyLock(!deck.isKeyLockEnabled());
     }
@@ -287,9 +350,9 @@ T7Performance::Lights T7Performance::lights(const FourDeckMixer& mixer) const {
     const auto echo = mixer.echoControls();
     const auto samples = mixer.samplerState();
     for (std::size_t i = 0; i < decks.size(); ++i) {
-        const auto snapshot = mixer.deckLights(i);
+        const auto snapshot = mixer.deckLights(active[i]);
         const auto& state = decks[i];
-        if (echo.strips[i].armed) {
+        if (echo.strips[active[i]].armed) {
             result[0][0x20 + i * 3 + static_cast<std::size_t>(state.effectSlot)] = 127;
         }
         auto& main = result[1 + i];
@@ -329,7 +392,7 @@ T7Performance::Lights T7Performance::lights(const FourDeckMixer& mixer) const {
                 const auto& sample = samples[static_cast<std::size_t>(pad)];
                 color = sample.playing ? 0x7f : sample.loaded ? 0x63 : 0;
             } else if (state.page == 6 && pad == 0) {
-                color = echo.strips[i].active ? 0x7f : 0x20;
+                color = echo.strips[active[i]].active ? 0x7f : 0x20;
             }
             if (snapshot.rolling && state.rollPad == pad && (state.page == 1 || state.page == 5)) {
                 color = 0x7f;

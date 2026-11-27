@@ -198,16 +198,33 @@ std::optional<double> FourDeckMixer::playingTempo(std::size_t index) const {
 }
 
 T7MotorState FourDeckMixer::motorState(std::size_t index) const {
-    if (!t7Connected || deviceRate <= 0 || index >= platters.size()) {
+    if (!t7Connected || deviceRate <= 0 || index >= decks.size()) {
         return {};
     }
     const auto& clock = *decks[leader];
     return {decks[index]->playing, deckSpeed(index, clock.playing && clock.grid.has_value())};
 }
 
-T7MotorState FourDeckMixer::t7MotorState(std::size_t index) const {
+T7MotorState FourDeckMixer::t7MotorState(std::size_t side) const {
     const std::lock_guard lock(mutex);
-    return motorState(index);
+    return side < t7Targets.size() ? motorState(t7Targets[side]) : T7MotorState{};
+}
+
+void FourDeckMixer::setT7Target(std::size_t side, std::size_t deck) {
+    const std::lock_guard lock(mutex);
+    if (side >= t7Targets.size() || deck >= decks.size() || t7Targets[side] == deck) {
+        return;
+    }
+    // Let go of the deck the platter was holding, and start the platter fresh on the new one.
+    decks[t7Targets[side]]->setScratch({});
+    t7Targets[side] = deck;
+    platters[side] = {};
+    platterTrackRevisions[side] = decks[deck]->trackRevision;
+}
+
+std::size_t FourDeckMixer::t7Target(std::size_t side) const {
+    const std::lock_guard lock(mutex);
+    return side < t7Targets.size() ? t7Targets[side] : side;
 }
 
 void FourDeckMixer::setT7Connected(bool connected) {
@@ -222,7 +239,7 @@ void FourDeckMixer::resetT7Stream() {
     const auto discarded = t7Fifo.read(static_cast<int>(t7Inbox.size()));
     t7Overflow.store(false, std::memory_order_relaxed);
     for (std::size_t i = 0; i < platters.size(); ++i) {
-        decks[i]->setScratch({});
+        decks[t7Targets[i]]->setScratch({});
     }
 }
 
@@ -316,7 +333,7 @@ void FourDeckMixer::applyExternalScratch() {
             decks[i]->setScratch({true, timecodeSignal[i].load() ? timecodeSpeed[i].load() : 0.0});
         } else if (on) {
             decks[i]->setScratch({true, externalScratchRate[i].load()});
-        } else if (externalScratchWas[i] && !(t7Connected && i < platters.size())) {
+        } else if (externalScratchWas[i] && !(t7Connected && isT7Target(i))) {
             decks[i]->setScratch({});
         }
         externalScratchWas[i] = on;
@@ -332,25 +349,26 @@ void FourDeckMixer::handleT7Block(int frames) {
         const auto discarded = t7Fifo.read(static_cast<int>(t7Inbox.size()));
         platters = {};
     }
-    for (std::size_t i = 0; i < platters.size(); ++i) {
-        if (platterTrackRevisions[i] != decks[i]->trackRevision) {
-            platterTrackRevisions[i] = decks[i]->trackRevision;
-            platters[i] = {};
+    for (std::size_t side = 0; side < platters.size(); ++side) {
+        const auto& deck = *decks[t7Targets[side]];
+        if (platterTrackRevisions[side] != deck.trackRevision) {
+            platterTrackRevisions[side] = deck.trackRevision;
+            platters[side] = {};
         }
     }
     const auto messages = t7Fifo.read(256);
     messages.forEach([&](int i) {
         const auto& packet = t7Inbox[static_cast<std::size_t>(i)];
-        const auto deckIndex = *t7DeckFor(packet);
-        auto& deck = *decks[deckIndex];
+        const auto side = *t7DeckFor(packet);
+        auto& deck = *decks[t7Targets[side]];
         if ((packet.status & 0xf0) == 0x90) {
             deck.pressPlayLocked();
         } else if (deck.pcm.getNumSamples() > 0) {
-            platters[deckIndex].accept(packet, t7Clock);
+            platters[side].accept(packet, t7Clock);
         }
     });
-    for (std::size_t i = 0; i < platters.size(); ++i) {
-        decks[i]->setScratch(platters[i].update(t7Clock, motorState(i)));
+    for (std::size_t side = 0; side < platters.size(); ++side) {
+        decks[t7Targets[side]]->setScratch(platters[side].update(t7Clock, motorState(t7Targets[side])));
     }
 }
 
@@ -621,7 +639,8 @@ FourDeckMixer::MixControls FourDeckMixer::mixControls() const {
     MixControls result{{}, crossfader, headphoneMix, splitCue};
     for (std::size_t i = 0; i < channels.size(); ++i) {
         const auto& channel = channels[i];
-        result.strips[i] = {channel.fader, (1 + channel.filter) * 0.5f, channel.peak, channel.cue, channel.eqPosition};
+        result.strips[i] = {channel.fader, (1 + channel.filter) * 0.5f, channel.peak, channel.cue, channel.eqPosition,
+                juce::jlimit(0.0f, 1.0f, 0.5f + juce::Decibels::gainToDecibels(channel.trim, -24.0f) / 24.0f)};
     }
     return result;
 }

@@ -23,6 +23,11 @@ class T7Midi final : private juce::MidiInputCallback, private juce::Timer {
     // SHIFT + ASSIST: save a GOOD MIX that ends on this deck. Return true when saved.
     std::function<bool(std::size_t deck)> onSaveMix;
     void flashGoodMix(std::size_t deck);
+    // SHIFT + SYNC moved a side of the T7 to another deck (side 0 = left, deck 0..3).
+    std::function<void(std::size_t side, std::size_t deck)> onDeckSwitch;
+    std::size_t targetDeck(std::size_t side) const { return performance.target(side); }
+    // Put both sides back on decks 1 and 2 (used when the screen goes back to two decks).
+    void returnToFirstDecks();
 
   private:
     void handleIncomingMidiMessage(juce::MidiInput*, const juce::MidiMessage&) override;
@@ -41,6 +46,8 @@ class T7Midi final : private juce::MidiInputCallback, private juce::Timer {
     std::atomic<bool> controlsOverflow{false};
     int endpointPoll = 0;
     std::optional<std::size_t> flashDeck;
+    std::array<juce::uint32, 2> switchFlashStart{};
+    std::array<bool, 2> switchFlashing{};
     juce::uint32 flashStartMs = 0;
     T7Performance::Lights withGoodMixFlash(T7Performance::Lights lights);
 };

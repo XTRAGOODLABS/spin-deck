@@ -175,16 +175,25 @@ void T7Midi::timerCallback() {
                     onBrowse((packet.second < 64 ? 1 : -1) * (packet.status >= 0xb4 ? 10 : 1));
                 }
             } else if (packet.first == 0x50 && (packet.status == 0x94 || packet.status == 0x95)) {
-                const std::size_t deck = packet.status == 0x94 ? 0 : 1;
+                const std::size_t side = packet.status == 0x94 ? 0 : 1;
+                const auto deck = performance.target(side);
                 if (packet.second && onSaveMix && onSaveMix(deck)) {
                     flashGoodMix(deck);
                 }
             } else if (packet.first == 0x0d && (packet.status & 0xf0) <= 0x90) {
                 if (onLoad && (packet.status & 0xf0) == 0x90 && packet.second) {
-                    onLoad(packet.status == 0x91 || packet.status == 0x94 ? 0 : 1);
+                    onLoad(performance.target(packet.status == 0x91 || packet.status == 0x94 ? 0 : 1));
                 }
             } else {
+                const std::array before{performance.target(0), performance.target(1)};
                 performance.handle(mixer, packet);
+                for (std::size_t side = 0; side < 2; ++side) {
+                    if (performance.target(side) != before[side]) {
+                        switchFlashing[side] = true;
+                        switchFlashStart[side] = juce::Time::getMillisecondCounter();
+                        if (onDeckSwitch) onDeckSwitch(side, performance.target(side));
+                    }
+                }
             }
         });
     }
@@ -194,13 +203,37 @@ void T7Midi::timerCallback() {
     }
 }
 
+void T7Midi::returnToFirstDecks() {
+    for (std::size_t side = 0; side < 2; ++side) {
+        if (performance.target(side) >= 2) {
+            performance.switchDeck(mixer, side);
+        }
+    }
+}
+
 void T7Midi::flashGoodMix(std::size_t deck) {
-    flashDeck = deck;
+    // Flash the side of the T7 that is showing this deck, if either is.
+    if (performance.target(0) != deck && performance.target(1) != deck) {
+        return;
+    }
+    flashDeck = performance.target(0) == deck ? 0 : 1;
     flashStartMs = juce::Time::getMillisecondCounter();
 }
 
 // Same pattern as the production mapping: green on, off, green on, then back to normal.
 T7Performance::Lights T7Midi::withGoodMixFlash(T7Performance::Lights lights) {
+    // After SHIFT + SYNC, that side's pads flash: blue for decks 3/4, white for decks 1/2.
+    for (std::size_t side = 0; side < 2; ++side) {
+        if (!switchFlashing[side]) continue;
+        const auto elapsed = juce::Time::getMillisecondCounter() - switchFlashStart[side];
+        if (elapsed >= 700) {
+            switchFlashing[side] = false;
+            continue;
+        }
+        if (elapsed < 200 || (elapsed >= 350 && elapsed < 550)) {
+            lights[5 + side].fill(performance.target(side) >= 2 ? uint8_t{0x03} : uint8_t{0x7f});
+        }
+    }
     if (!flashDeck) {
         return lights;
     }

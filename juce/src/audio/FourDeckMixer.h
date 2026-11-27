@@ -22,7 +22,10 @@ class FourDeckMixer final : public juce::AudioSource {
     std::size_t syncLeader() const;
     void setT7Connected(bool connected);
     void enqueueT7Midi(int status, int first, int second, double timestamp);
-    T7MotorState t7MotorState(std::size_t index) const;
+    T7MotorState t7MotorState(std::size_t side) const; // side 0 = the T7's left deck, 1 = right
+    // Which deck each side of the T7 controls: left 0 or 2 (deck 1 or 3), right 1 or 3 (deck 2 or 4).
+    void setT7Target(std::size_t side, std::size_t deck);
+    std::size_t t7Target(std::size_t side) const;
     // Scratch from a controller mapping or timecode vinyl: rate 1 is normal speed, 0 is held still.
     void setExternalScratch(std::size_t deck, bool active, double rate);
     bool isExternalScratchActive(std::size_t deck) const;
@@ -91,7 +94,7 @@ class FourDeckMixer final : public juce::AudioSource {
     bool isSplitCue() const;
 
     struct MixControls {
-        struct Strip { float fader, filter, peak; bool cue; std::array<float, 3> eq{0.5f, 0.5f, 0.5f}; };
+        struct Strip { float fader, filter, peak; bool cue; std::array<float, 3> eq{0.5f, 0.5f, 0.5f}; float trim = 0.5f; };
         std::array<Strip, 4> strips;
         float crossfade, headphoneBlend;
         bool split;
@@ -224,6 +227,8 @@ class FourDeckMixer final : public juce::AudioSource {
     void readTimecode(const juce::AudioSourceChannelInfo&);
     void applyExternalScratch();
     std::array<uint64_t, 2> platterTrackRevisions{};
+    std::array<std::size_t, 2> t7Targets{0, 1};
+    bool isT7Target(std::size_t deck) const { return deck == t7Targets[0] || deck == t7Targets[1]; }
     std::array<T7Packet, 2048> t7Inbox{};
     juce::AbstractFifo t7Fifo{static_cast<int>(t7Inbox.size())};
     std::atomic<bool> t7Overflow{false};

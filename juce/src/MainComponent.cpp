@@ -1033,7 +1033,17 @@ MainComponent::MainComponent()
     };
     // SHIFT + ASSIST on a T7 deck: that deck's song worked after the other deck's song.
     t7.onSaveMix = [this](std::size_t incoming) {
-        return library.quickSaveMix(incoming == 0 ? 1 : 0, incoming);
+        // The other side of the T7 holds the song mixed out of.
+        const auto outgoing = t7.targetDeck(0) == incoming ? t7.targetDeck(1) : t7.targetDeck(0);
+        return library.quickSaveMix(outgoing, incoming);
+    };
+    // SHIFT + SYNC on the T7: that side now controls deck 3 or 4 (or back to 1 or 2).
+    t7.onDeckSwitch = [this](std::size_t side, std::size_t deck) {
+        if (deck >= 2 && deckCount < 4) {
+            setDeckCount(4);
+        }
+        showToast(juce::String(side == 0 ? "T7 LEFT" : "T7 RIGHT") + juce::String::fromUTF8(" \xE2\x86\x92 DECK ") +
+                juce::String(static_cast<int>(deck) + 1));
     };
     library.readTrackContext = [this] { return mixer.trackContext(); };
     library.onMakeStems = [this](const juce::Array<juce::File>& files) { stemQueue->addTracks(files); };
@@ -1815,6 +1825,9 @@ void MainComponent::releaseResources() {
 }
 
 void MainComponent::setDeckCount(int visible) {
+    if (visible < 4) {
+        t7.returnToFirstDecks(); // the T7 can't stay on a deck that is hidden
+    }
     deckCount = visible;
     twoDecks.setToggleState(visible == 2, juce::dontSendNotification);
     fourDecks.setToggleState(visible == 4, juce::dontSendNotification);
