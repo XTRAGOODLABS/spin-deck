@@ -465,20 +465,6 @@ void crate::paintWave(juce::Graphics& g, juce::Rectangle<int> bounds, const Deck
     };
     juce::Graphics::ScopedSaveState clip(g);
     g.reduceClipRegion(area);
-    if (grid && grid->bpm > 0 && follow) {
-        const int first = static_cast<int>(std::ceil(grid->beatAt(start)));
-        for (int number = first; ; ++number) {
-            const double tick = grid->timeAt(number);
-            if (tick >= start + span) {
-                break;
-            }
-            if (tick >= 0) {
-                g.setColour(juce::Colours::white.withAlpha(number % 4 == 0 ? 0.22f : 0.08f));
-                g.drawVerticalLine(juce::roundToInt(at(tick)), static_cast<float>(area.getY()),
-                        static_cast<float>(area.getBottom()));
-            }
-        }
-    }
     const auto total = static_cast<int>(wave->bins.size());
     const double secondsPerBin = wave->seconds / total;
     const auto mid = static_cast<float>(area.getCentreY());
@@ -512,6 +498,39 @@ void crate::paintWave(juce::Graphics& g, juce::Rectangle<int> bounds, const Deck
         g.drawVerticalLine(px, mid - amplitude, mid + amplitude);
         g.setColour(colour.brighter(0.5f).withAlpha(0.7f));
         g.drawVerticalLine(px, mid - amplitude * 0.35f, mid + amplitude * 0.35f);
+    }
+    if (grid && grid->bpm > 0 && follow) {
+        // Drawn over the waveform so the grid can be checked against the kicks.
+        // Bar starts (every 4th beat) get a bold line and tabs top and bottom; other beats a thin line.
+        const auto ink = crate::waveBackground.contrasting();
+        const int first = static_cast<int>(std::ceil(grid->beatAt(start)));
+        for (int number = first; ; ++number) {
+            const double tick = grid->timeAt(number);
+            if (tick >= start + span) {
+                break;
+            }
+            if (tick < 0) {
+                continue;
+            }
+            const int x = juce::roundToInt(at(tick));
+            const bool bar = ((number % 4) + 4) % 4 == 0;
+            const auto top = static_cast<float>(area.getY()), bottom = static_cast<float>(area.getBottom());
+            if (bar) {
+                g.setColour(ink.withAlpha(0.75f));
+                g.fillRect(juce::Rectangle<float>(static_cast<float>(x) - 1.0f, top, 2.0f, bottom - top));
+                juce::Path tabs;
+                tabs.addTriangle(static_cast<float>(x) - 5, top, static_cast<float>(x) + 5, top, static_cast<float>(x), top + 7);
+                tabs.addTriangle(static_cast<float>(x) - 5, bottom, static_cast<float>(x) + 5, bottom, static_cast<float>(x), bottom - 7);
+                g.fillPath(tabs);
+            } else {
+                g.setColour(ink.withAlpha(0.55f));
+                g.drawVerticalLine(x, top, bottom);
+                juce::Path ticks;
+                ticks.addTriangle(static_cast<float>(x) - 3, top, static_cast<float>(x) + 3, top, static_cast<float>(x), top + 4);
+                ticks.addTriangle(static_cast<float>(x) - 3, bottom, static_cast<float>(x) + 3, bottom, static_cast<float>(x), bottom - 4);
+                g.fillPath(ticks);
+            }
+        }
     }
     if (markers) {
         const auto flag = [&](double seconds, const juce::String& label, juce::Colour colour) {

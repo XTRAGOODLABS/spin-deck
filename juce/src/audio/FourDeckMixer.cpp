@@ -344,7 +344,7 @@ void FourDeckMixer::handleT7Block(int frames) {
         const auto deckIndex = *t7DeckFor(packet);
         auto& deck = *decks[deckIndex];
         if ((packet.status & 0xf0) == 0x90) {
-            deck.setPlaying(!deck.playing);
+            deck.pressPlayLocked();
         } else if (deck.pcm.getNumSamples() > 0) {
             platters[deckIndex].accept(packet, t7Clock);
         }

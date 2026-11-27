@@ -589,6 +589,8 @@ bool ControlSurface::setDeck(std::size_t deck, const juce::String& key, double v
     const juce::String group = "[Channel" + juce::String(deck + 1) + "]";
     const auto& l = lights(deck);
     if (key == "play") {
+        // A mapping's PLAY while CUE is held: keep playing, as Mixxx does.
+        if (engine.isPreviewing()) { engine.play(); return true; }
         if (on != l.playing) { if (on) engine.play(); else engine.pause(); }
         return true;
     }

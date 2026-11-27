@@ -268,7 +268,29 @@ uint8_t DeckEngine::stemSends() const {
 
 void DeckEngine::play() {
     const std::lock_guard lock(mutex);
+    // Playing for real: letting go of CUE or a hot cue should no longer jump back.
+    previewingCue = false;
+    hotCuePreview.reset();
     setPlaying(true);
+}
+
+void DeckEngine::pressPlay() {
+    const std::lock_guard lock(mutex);
+    pressPlayLocked();
+}
+
+void DeckEngine::pressPlayLocked() {
+    if (playing && (previewingCue || hotCuePreview)) {
+        previewingCue = false;
+        hotCuePreview.reset();
+        return;
+    }
+    setPlaying(!playing);
+}
+
+bool DeckEngine::isPreviewing() const {
+    const std::lock_guard lock(mutex);
+    return playing && (previewingCue || hotCuePreview.has_value());
 }
 
 void DeckEngine::setPlaying(bool shouldPlay) {

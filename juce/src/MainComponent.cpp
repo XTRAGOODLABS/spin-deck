@@ -735,11 +735,7 @@ void DeckPanel::fetchSongDetails(const juce::File& file) {
 }
 
 void DeckPanel::togglePlayback() {
-    if (engine.isPlaying()) {
-        engine.pause();
-    } else {
-        engine.play();
-    }
+    engine.pressPlay();
     timerCallback();
 }
 

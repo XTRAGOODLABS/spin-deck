@@ -31,6 +31,10 @@ class DeckEngine final {
     void stop();
     void seek(double seconds);
     bool isPlaying() const;
+    // The PLAY button. While CUE or a hot cue is held (previewing), PLAY keeps the deck playing
+    // after the button is let go, like a CDJ. Otherwise it starts or pauses.
+    void pressPlay();
+    bool isPreviewing() const;
     void setGain(float gain);
     double positionSeconds() const;
     double durationSeconds() const;
@@ -122,6 +126,7 @@ class DeckEngine final {
     bool setGrid(TrackBeatGrid);
     void seekToFrame(double target);
     void setPlaying(bool shouldPlay);
+    void pressPlayLocked();
     void setScratch(T7Platter::Scratch control);
     void renderScratch(const juce::AudioSourceChannelInfo& output, double deviceRate);
     void alignToPhase(double phase);
