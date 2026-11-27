@@ -638,6 +638,42 @@ bool DeckEngine::nudgeGridTempo(double bpmChange) {
     });
 }
 
+bool DeckEngine::scaleGridTempo(double factor) {
+    if (factor != 0.5 && factor != 2.0) {
+        return false;
+    }
+    return editGrid([factor](const TrackBeatGrid& current, double) -> std::optional<TrackBeatGrid> {
+        const double bpm = current.bpm * factor;
+        if (bpm < 30 || bpm > 300) {
+            return {};
+        }
+        TrackBeatGrid result(bpm, current.anchorSeconds);
+        if (current.markers) {
+            // Imported beat-by-beat grids: keep every other beat, or add one halfway between each pair.
+            const auto& old = *current.markers;
+            std::vector<double> beats;
+            std::size_t downbeat = 0;
+            if (factor < 1) {
+                const std::size_t parity = old.downbeat % 2;
+                for (std::size_t i = parity; i < old.seconds.size(); i += 2) {
+                    if (i == old.downbeat) downbeat = beats.size();
+                    beats.push_back(old.seconds[i]);
+                }
+            } else {
+                for (std::size_t i = 0; i < old.seconds.size(); ++i) {
+                    if (i == old.downbeat) downbeat = beats.size();
+                    beats.push_back(old.seconds[i]);
+                    if (i + 1 < old.seconds.size()) beats.push_back((old.seconds[i] + old.seconds[i + 1]) * 0.5);
+                }
+            }
+            if (!result.setMarkers(std::move(beats), downbeat)) {
+                return {};
+            }
+        }
+        return result;
+    });
+}
+
 bool DeckEngine::revertGrid() {
     const std::lock_guard edits(trackEditMutex);
     juce::File track;

@@ -46,6 +46,9 @@ class DeckEngine final {
     bool alignGridToPlayhead();           // Move the grid so the nearest beat sits at the playhead.
     bool shiftGrid(double seconds);       // Nudge the whole grid earlier (negative) or later.
     bool nudgeGridTempo(double bpmChange); // Constant-tempo grids only; keeps the beat under the playhead.
+    // Half (0.5) or double (2) the grid's BPM, e.g. a hip hop track read as 170 that is really 85.
+    // Beat 1 stays where it is.
+    bool scaleGridTempo(double factor);
     bool revertGrid();
     bool canRevertGrid() const;
     void setGridLocked(bool locked);

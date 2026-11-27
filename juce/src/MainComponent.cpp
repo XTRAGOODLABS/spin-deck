@@ -51,6 +51,8 @@ DeckPanel::DeckPanel(std::size_t panelIndex, FourDeckMixer& deckMixer)
     }
     keyLabel.setFont(juce::FontOptions(17.0f));
     bpmLabel.setFont(juce::FontOptions(25.0f, juce::Font::bold));
+    bpmLabel.setInterceptsMouseClicks(false, false); // a click on the BPM opens the half/double menu
+    bpmLabel.setMouseCursor(juce::MouseCursor::PointingHandCursor);
     remaining.setFont(juce::FontOptions(16.0f));
     remaining.setColour(juce::Label::textColourId, crate::muted);
     total.setFont(juce::FontOptions(16.0f));
@@ -440,7 +442,44 @@ void DeckPanel::refreshFonts() {
 }
 
 void DeckPanel::mouseDown(const juce::MouseEvent& event) {
+    if (bpmLabel.getBounds().contains(event.getPosition())) {
+        showBpmMenu();
+        return;
+    }
     seekFromOverview(event.getPosition());
+}
+
+// Click the big BPM number: fix a track read at double or half its real tempo (170 -> 85).
+void DeckPanel::showBpmMenu() {
+    const auto grid = engine.beatGrid();
+    if (!grid) {
+        return;
+    }
+    const bool locked = engine.isGridLocked();
+    const auto bpmText = [](double value) { return juce::String(value, value == std::round(value) ? 0 : 2); };
+    juce::PopupMenu menu;
+    menu.addSectionHeader("Beat grid BPM: " + bpmText(grid->bpm));
+    const auto apply = [safe = juce::Component::SafePointer<DeckPanel>(this)](double factor) {
+        if (safe != nullptr && safe->engine.scaleGridTempo(factor)) {
+            if (safe->onGridChanged) safe->onGridChanged();
+            safe->timerCallback();
+        }
+    };
+    menu.addItem("Half: " + bpmText(grid->bpm) + juce::String::fromUTF8(" \xE2\x86\x92 ") + bpmText(grid->bpm / 2),
+            !locked && grid->bpm / 2 >= 30, false, [apply] { apply(0.5); });
+    menu.addItem("Double: " + bpmText(grid->bpm) + juce::String::fromUTF8(" \xE2\x86\x92 ") + bpmText(grid->bpm * 2),
+            !locked && grid->bpm * 2 <= 300, false, [apply] { apply(2.0); });
+    menu.addItem("Undo last grid change", engine.canRevertGrid(), false,
+            [safe = juce::Component::SafePointer<DeckPanel>(this)] {
+                if (safe != nullptr && safe->engine.revertGrid()) {
+                    if (safe->onGridChanged) safe->onGridChanged();
+                    safe->timerCallback();
+                }
+            });
+    if (locked) {
+        menu.addItem("Beat grid is locked (unlock it with the lock button)", false, false, [] {});
+    }
+    menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(bpmLabel));
 }
 
 void DeckPanel::mouseDrag(const juce::MouseEvent& event) {
@@ -1020,8 +1059,10 @@ MainComponent::MainComponent()
             if (const auto grid = mixer.deck(i).beatGrid(); grid && file != juce::File{}) {
                 library.addTrack(file, grid->bpm, mixer.deck(i).durationSeconds());
             }
+            gridTools[i]->refresh();
             repaint(waveformArea);
         };
+        panels[i]->onGridChanged = [this, i] { gridTools[i]->onGridChanged(); };
         addChildComponent(*gridTools[i]);
     }
 

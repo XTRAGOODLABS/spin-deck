@@ -33,6 +33,8 @@ class DeckPanel final : public juce::Component, public juce::DragAndDropTarget,
     void filesDropped(const juce::StringArray&, int, int) override;
     void paintOverChildren(juce::Graphics&) override;
     std::function<void(const juce::File&, std::optional<double>, double)> onTrackLoaded;
+    std::function<void()> onGridChanged; // after half/double BPM from the BPM number
+    void showBpmMenu();
     void paintWaveLane(juce::Graphics&, juce::Rectangle<int>) const;
     void paint(juce::Graphics& graphics) override;
     void resized() override;
