@@ -211,6 +211,7 @@ class DeckEngine final {
     std::array<std::optional<Loop>, 8> hotLoops{};
     std::vector<Loop> savedLoops;
     uint64_t revision = 0;
+    uint64_t jumps = 0; // counts seeks, so the mixer can smooth the join
     uint64_t gridRevision = 0;
     uint64_t trackRevision = 0;
 };

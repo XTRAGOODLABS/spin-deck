@@ -479,6 +479,7 @@ void DeckEngine::seekToFrame(double target) {
         loop.reset();
     }
     ++revision;
+    ++jumps;
 }
 
 bool DeckEngine::isPlaying() const {

@@ -26,6 +26,9 @@ class FourDeckMixer final : public juce::AudioSource {
     // Scratch from a controller mapping or timecode vinyl: rate 1 is normal speed, 0 is held still.
     void setExternalScratch(std::size_t deck, bool active, double rate);
     bool isExternalScratchActive(std::size_t deck) const;
+    // On by default: a 2 ms blend when a deck starts, stops or jumps, so it doesn't click.
+    // Tests that check exact sample positions right after a jump turn it off.
+    void setTransportSmoothing(bool on) { transportSmoothing.store(on); }
 
     // Timecode vinyl / Phase: the record on input channels firstInputChannel and the next one drives the deck.
     struct TimecodeState { bool enabled = false, signal = false; double speed = 0; int firstInputChannel = 0; };
@@ -147,7 +150,9 @@ class FourDeckMixer final : public juce::AudioSource {
         uint32_t noiseState = 0x1a2b3c4d;
         juce::SmoothedValue<float> masterLevel{1}, cueLevel{0};
         std::array<float, 2> lastDeckSamples{}, continuityAnchor{};
-        int continuityFadeRemaining = 0;
+        int continuityFadeRemaining = 0, continuityLength = 1;
+        bool lastPlaying = false, continuityTransport = false;
+        uint64_t lastJumps = 0;
         bool wasScratching = false;
         uint8_t lastStemMutes = 0;
         bool lastStemSum = false;
@@ -209,6 +214,7 @@ class FourDeckMixer final : public juce::AudioSource {
     std::array<std::atomic<bool>, 4> externalScratchOn{};
     std::array<std::atomic<double>, 4> externalScratchRate{};
     std::array<bool, 4> externalScratchWas{};
+    std::atomic<bool> transportSmoothing{true};
     mutable std::mutex timecodeMutex;
     std::array<std::unique_ptr<TimecodeInput>, 4> timecode{};
     std::array<timecode_def*, 4> timecodeTypes{};

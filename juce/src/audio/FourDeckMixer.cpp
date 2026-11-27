@@ -670,6 +670,8 @@ void FourDeckMixer::mixDeck(std::size_t index, const juce::AudioSourceChannelInf
         channel.continuityFadeRemaining = 0;
         channel.lastDeckSamples = {};
         channel.wasScratching = false;
+        channel.lastPlaying = deck.playing;
+        channel.lastJumps = deck.jumps;
         channel.lastStemMutes = deck.stemMutes;
         channel.lastStemSum = deck.usesStemSum();
         channel.echo.resetHistory();
@@ -679,10 +681,17 @@ void FourDeckMixer::mixDeck(std::size_t index, const juce::AudioSourceChannelInf
         channel.riserLevel.setCurrentAndTargetValue(0);
     }
     // Switching between the full mix and the summed stems gets the same short blend as a mute change.
-    if (channel.wasScratching != deck.scratch.active || channel.lastStemMutes != deck.stemMutes ||
+    // Starting, stopping and jumping (hot cues, CUE) get a slightly longer blend so they don't click.
+    const bool transport = transportSmoothing.load() &&
+            (channel.lastPlaying != deck.playing || channel.lastJumps != deck.jumps);
+    channel.lastPlaying = deck.playing;
+    channel.lastJumps = deck.jumps;
+    if (transport || channel.wasScratching != deck.scratch.active || channel.lastStemMutes != deck.stemMutes ||
             channel.lastStemSum != deck.usesStemSum()) {
         channel.continuityAnchor = channel.lastDeckSamples;
-        channel.continuityFadeRemaining = continuityFadeLength;
+        channel.continuityLength = transport ? std::max(1, juce::roundToInt(deviceRate * 0.002)) : continuityFadeLength;
+        channel.continuityFadeRemaining = channel.continuityLength;
+        channel.continuityTransport = transport && !(channel.wasScratching != deck.scratch.active);
         channel.wasScratching = deck.scratch.active;
         channel.lastStemMutes = deck.stemMutes;
         channel.lastStemSum = deck.usesStemSum();
@@ -735,12 +744,20 @@ void FourDeckMixer::mixDeck(std::size_t index, const juce::AudioSourceChannelInf
             }
         }
         const auto continuity = [&] {
+            // A start or jump that already joins smoothly (same level either side) is left exactly as it is.
+            if (channel.continuityTransport && channel.continuityFadeRemaining == channel.continuityLength && count > 0) {
+                channel.continuityTransport = false;
+                if (std::abs(deckBuffer.getSample(0, 0) - channel.continuityAnchor[0]) < 0.01f &&
+                        std::abs(deckBuffer.getSample(1, 0) - channel.continuityAnchor[1]) < 0.01f) {
+                    channel.continuityFadeRemaining = 0;
+                }
+            }
             const int fading = std::min(count, channel.continuityFadeRemaining);
             for (int sideIndex = 0; sideIndex < 2; ++sideIndex) {
                 auto* samples = deckBuffer.getWritePointer(sideIndex);
                 for (int i = 0; i < fading; ++i) {
                     const float blend = 1.0f - static_cast<float>(channel.continuityFadeRemaining - i - 1) /
-                            static_cast<float>(continuityFadeLength);
+                            static_cast<float>(channel.continuityLength);
                     samples[i] = std::lerp(channel.continuityAnchor[sideIndex], samples[i], blend);
                 }
                 channel.lastDeckSamples[sideIndex] = samples[count - 1];

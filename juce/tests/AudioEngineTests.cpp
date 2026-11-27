@@ -448,6 +448,7 @@ bool testT7Scratch(const juce::File& file, double rate) {
 
 bool testPerformanceControls(const juce::File& file, double rate) {
     spindeck::FourDeckMixer mixer;
+    mixer.setTransportSmoothing(false); // these checks read exact samples right after jumps
     auto& deck = mixer.deck(0);
     if (!deck.load(file) || !deck.setBeatGrid(120, 0.1)) {
         return false;
@@ -666,6 +667,7 @@ int main(int argc, char** argv) {
     }
 
     spindeck::FourDeckMixer mixer;
+    mixer.setTransportSmoothing(false); // these checks read exact samples right after jumps
     if (mixer.deckCount() != 4) {
         std::cerr << "expected four decks\n";
         return 1;
