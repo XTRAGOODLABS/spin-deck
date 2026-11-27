@@ -26,6 +26,9 @@ const DeckEngine& FourDeckMixer::deck(std::size_t index) const {
 void FourDeckMixer::setSyncLeader(std::size_t index) {
     const std::lock_guard lock(mutex);
     if (index < decks.size() && index != leader) {
+        if (sync[index].enabled && decks[index]->playing && manualSpeed(index) > 0) {
+            heldRatio[index] = lastSpeed[index] / manualSpeed(index); // no speed jump for a synced deck
+        }
         leader = index;
         sync[leader].enabled = false;
         for (auto& state : sync) {
@@ -178,7 +181,32 @@ double FourDeckMixer::manualSpeed(std::size_t index) const {
     const auto& control = tempo[index];
     const auto& bend = pitchBend[index];
     const int direction = static_cast<int>(bend[1]) - static_cast<int>(bend[0]);
-    return (1 + control.position * tempoRanges[static_cast<std::size_t>(control.range)]) * (1 + 0.04 * direction);
+    return (1 + control.position * tempoRanges[static_cast<std::size_t>(control.range)]) * (1 + 0.04 * direction)
+            * heldRatio[index];
+}
+
+bool FourDeckMixer::runsClock(std::size_t index) const {
+    const auto& deck = *decks[index];
+    return deck.playing && deck.grid.has_value() && !deck.previewingCue && !deck.hotCuePreview.has_value();
+}
+
+void FourDeckMixer::handOffLeader() {
+    if (runsClock(leader)) {
+        return;
+    }
+    for (std::size_t i = 0; i < decks.size(); ++i) {
+        if (i != leader && sync[i].enabled && runsClock(i)) {
+            heldRatio[i] = 1;
+            const double own = manualSpeed(i);
+            if (own > 0) {
+                heldRatio[i] = lastSpeed[i] / own;
+            }
+            sync[leader] = SyncState{true}; // the old leader follows from now on
+            leader = i;
+            sync[i] = SyncState{};
+            return;
+        }
+    }
 }
 
 double FourDeckMixer::deckSpeed(std::size_t index, bool clockRunning) const {
@@ -194,7 +222,7 @@ std::optional<double> FourDeckMixer::playingTempo(std::size_t index) const {
         return {};
     }
     const auto& clock = *decks[leader];
-    return deck.localTempo() * deckSpeed(index, clock.playing && clock.grid.has_value());
+    return deck.localTempo() * deckSpeed(index, runsClock(leader));
 }
 
 T7MotorState FourDeckMixer::motorState(std::size_t index) const {
@@ -202,7 +230,7 @@ T7MotorState FourDeckMixer::motorState(std::size_t index) const {
         return {};
     }
     const auto& clock = *decks[leader];
-    return {decks[index]->playing, deckSpeed(index, clock.playing && clock.grid.has_value())};
+    return {decks[index]->playing, deckSpeed(index, runsClock(leader))};
 }
 
 T7MotorState FourDeckMixer::t7MotorState(std::size_t side) const {
@@ -624,7 +652,7 @@ FourDeckMixer::TrackContext FourDeckMixer::trackContext() const {
     const std::lock_guard lock(mutex);
     TrackContext context{{}, leader};
     const auto& clock = *decks[leader];
-    const bool clockRunning = clock.playing && clock.grid.has_value();
+    const bool clockRunning = runsClock(leader);
     for (std::size_t i = 0; i < decks.size(); ++i) {
         const auto& deck = *decks[i];
         context.decks[i] = {deck.loadedTrack, deck.grid
@@ -901,9 +929,10 @@ void FourDeckMixer::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
     }
     handleT7Block(bufferToFill.numSamples);
     applyExternalScratch();
+    handOffLeader();
 
     const auto& clock = *decks[leader];
-    const bool clockRunning = clock.playing && clock.grid.has_value();
+    const bool clockRunning = runsClock(leader);
     const double clockBeat = clockRunning ? clock.beatPosition() : 0;
     const double clockTempo = clockRunning ? clock.localTempo() * manualSpeed(leader) : 0;
     const double phase = clockBeat - std::floor(clockBeat);
@@ -912,7 +941,8 @@ void FourDeckMixer::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
         auto& state = sync[i];
         double speed = manualSpeed(i);
         if (i != leader && state.enabled && clockRunning && deck.playing && deck.grid) {
-            if (!clock.scratch.active && !deck.scratch.active &&
+            const bool previewing = deck.previewingCue || deck.hotCuePreview.has_value();
+            if (!clock.scratch.active && !deck.scratch.active && !previewing &&
                     (!state.aligned || state.leaderRevision != clock.revision ||
                             state.followerRevision != deck.gridRevision)) {
                 deck.alignToPhase(phase);
@@ -921,9 +951,15 @@ void FourDeckMixer::getNextAudioBlock(const juce::AudioSourceChannelInfo& buffer
                 state.followerRevision = deck.gridRevision;
             }
             speed = clockTempo / deck.localTempo();
+            heldRatio[i] = 1;
         } else {
             state.aligned = false;
+            if (!deck.playing) {
+                heldRatio[i] = 1; // a stopped deck goes back to its own tempo fader
+                speed = manualSpeed(i);
+            }
         }
+        lastSpeed[i] = speed;
         mixDeck(i, bufferToFill, speed);
     }
     mixSamplers(bufferToFill);

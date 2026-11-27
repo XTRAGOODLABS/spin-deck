@@ -170,6 +170,10 @@ class FourDeckMixer final : public juce::AudioSource {
         uint64_t followerRevision = 0;
     };
     double manualSpeed(std::size_t index) const;
+    // A deck drives the sync clock only while it really plays: not stopped, and not a CUE/hot cue preview.
+    bool runsClock(std::size_t index) const;
+    // When the leader stops or is only being previewed, a synced deck that is playing takes over.
+    void handOffLeader();
     double deckSpeed(std::size_t index, bool clockRunning) const;
     T7MotorState motorState(std::size_t index) const;
     void handleT7Block(int frames);
@@ -179,6 +183,9 @@ class FourDeckMixer final : public juce::AudioSource {
     TrackMetadataStore metadata;
     std::array<std::unique_ptr<DeckEngine>, 4> decks;
     std::array<SyncState, 4> sync{};
+    // A deck that took over as leader keeps the speed it was synced to, as a ratio over its tempo fader.
+    std::array<double, 4> heldRatio{1, 1, 1, 1};
+    std::array<double, 4> lastSpeed{1, 1, 1, 1};
     std::array<Channel, 4> channels{};
     std::array<TempoControl, 4> tempo{};
     std::array<std::array<bool, 2>, 4> pitchBend{};
