@@ -40,6 +40,11 @@ void FourDeckMixer::setSyncLeader(std::size_t index) {
 void FourDeckMixer::setSyncEnabled(std::size_t index, bool enabled) {
     const std::lock_guard lock(mutex);
     if (index < decks.size() && index != leader) {
+        if (!enabled && sync[index].enabled && decks[index]->playing && manualSpeed(index) > 0) {
+            // Turning SYNC off keeps the speed the deck was synced to, rather than snapping back to its tempo
+            // fader. The tempo fader and pitch bend then nudge from there.
+            heldRatio[index] = lastSpeed[index] / manualSpeed(index);
+        }
         sync[index] = SyncState{enabled};
     }
 }
