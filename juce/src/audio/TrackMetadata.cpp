@@ -1,5 +1,7 @@
 #include "audio/TrackMetadata.h"
 
+#include <algorithm>
+
 #include <cmath>
 
 namespace spindeck {
@@ -144,6 +146,34 @@ std::optional<TrackMetadata> TrackMetadataStore::read(
             }
         }
     }
+    if (const auto* names = object->getProperty("cueNames").getArray()) {
+        for (int i = 0; i < std::min(names->size(), static_cast<int>(result.cueNames.size())); ++i) {
+            result.cueNames[static_cast<std::size_t>(i)] = (*names)[i].toString().substring(0, 40);
+        }
+    }
+    if (const auto* colours = object->getProperty("cueColours").getArray()) {
+        for (int i = 0; i < std::min(colours->size(), static_cast<int>(result.cueColours.size())); ++i) {
+            result.cueColours[static_cast<std::size_t>(i)] = static_cast<juce::uint32>(static_cast<juce::int64>((*colours)[i]));
+        }
+    }
+    if (const auto* marks = object->getProperty("markers").getArray()) {
+        for (const auto& item : *marks) {
+            const auto seconds = number(item.getProperty("seconds", {}));
+            if (!seconds || *seconds < 0 || result.markers.size() >= 256) {
+                continue;
+            }
+            TrackMarker marker;
+            marker.kind = item.getProperty("kind", "mix").toString() == "branch" ? TrackMarker::Kind::branch
+                                                                                 : TrackMarker::Kind::mix;
+            marker.seconds = *seconds;
+            marker.text = item.getProperty("text", {}).toString().substring(0, 60);
+            marker.colour = static_cast<juce::uint32>(static_cast<juce::int64>(item.getProperty("colour", 0)));
+            marker.mutedStems = static_cast<uint8_t>(static_cast<int>(item.getProperty("muted", 0)) & 0x0f);
+            result.markers.push_back(marker);
+        }
+        std::sort(result.markers.begin(), result.markers.end(),
+                [](const auto& a, const auto& b) { return a.seconds < b.seconds; });
+    }
     if (const auto* loops = object->getProperty("savedLoops").getArray()) {
         for (const auto& item : *loops) {
             const auto start = number(item.getProperty("start", {}));
@@ -228,6 +258,30 @@ bool TrackMetadataStore::edit(const juce::File& track, const std::function<void(
             loops.add(std::move(entry));
         }
         object->setProperty("savedLoops", loops);
+    }
+    if (std::any_of(metadata->cueNames.begin(), metadata->cueNames.end(), [](const auto& n) { return n.isNotEmpty(); }) ||
+            std::any_of(metadata->cueColours.begin(), metadata->cueColours.end(), [](auto c) { return c != 0; })) {
+        juce::Array<juce::var> names, colours;
+        for (std::size_t i = 0; i < metadata->cueNames.size(); ++i) {
+            names.add(metadata->cueNames[i]);
+            colours.add(static_cast<juce::int64>(metadata->cueColours[i]));
+        }
+        object->setProperty("cueNames", names);
+        object->setProperty("cueColours", colours);
+    }
+    if (!metadata->markers.empty()) {
+        juce::Array<juce::var> marks;
+        for (const auto& marker : metadata->markers) {
+            juce::var entry(new juce::DynamicObject());
+            auto* item = entry.getDynamicObject();
+            item->setProperty("kind", marker.kind == TrackMarker::Kind::branch ? "branch" : "mix");
+            item->setProperty("seconds", marker.seconds);
+            item->setProperty("text", marker.text);
+            if (marker.colour != 0) item->setProperty("colour", static_cast<juce::int64>(marker.colour));
+            if (marker.kind == TrackMarker::Kind::branch) item->setProperty("muted", static_cast<int>(marker.mutedStems));
+            marks.add(std::move(entry));
+        }
+        object->setProperty("markers", marks);
     }
     juce::TemporaryFile temp(record);
     return temp.getFile().replaceWithText(juce::JSON::toString(json, true)) &&

@@ -39,6 +39,17 @@ struct TrackLoop {
     bool sameRange(const TrackLoop& other) const;
 };
 
+// A labelled spot in a song. Mix markers are notes ("MIX IN"); branches also switch stems when the song
+// plays past them.
+struct TrackMarker {
+    enum class Kind { mix, branch };
+    Kind kind = Kind::mix;
+    double seconds = 0;
+    juce::String text;
+    juce::uint32 colour = 0;  // ARGB; 0 means the kind's own colour
+    uint8_t mutedStems = 0;   // branches: stems off from here (bit 0 drums, 1 bass, 2 other, 3 vocals)
+};
+
 struct TrackMetadata {
     std::optional<TrackBeatGrid> grid;         // the grid in use, with your edits
     std::optional<TrackBeatGrid> analyzedGrid; // the original from analysis or import, never edited
@@ -46,6 +57,9 @@ struct TrackMetadata {
     std::array<std::optional<double>, 8> cues{};
     std::array<std::optional<double>, 8> hotLoopEnds{};
     std::vector<TrackLoop> savedLoops;
+    std::array<juce::String, 8> cueNames{};
+    std::array<juce::uint32, 8> cueColours{}; // ARGB; 0 means the pad's own colour
+    std::vector<TrackMarker> markers;          // mix markers and branches, in time order
     bool gridLocked = false;
     void addSavedLoop(TrackLoop);
 };

@@ -92,6 +92,22 @@ class Look final : public juce::LookAndFeel_V4 {
 void paintWave(juce::Graphics&, juce::Rectangle<int>, const DeckEngine::Overview*, double playhead,
         const std::optional<TrackBeatGrid>& grid, bool follow, juce::Colour accent,
         const DeckEngine::Markers* markers = nullptr);
+
+// Cue points, mix markers and branches as labels.
+struct MarkLabel {
+    enum class Kind { cue, mix, branch };
+    Kind kind = Kind::cue;
+    int index = 0; // hot cue slot, or index into the deck's markers
+    double seconds = 0;
+    juce::String text;
+    juce::Colour colour;
+};
+std::vector<MarkLabel> markLabels(const DeckEngine::Markers&);
+inline const std::array<juce::uint32, 6> markerColours{0xfff59e0b, 0xffef4444, 0xff38bdf8, 0xff4ade80, 0xffc084fc, 0xfff472b6};
+void drawMarkLabel(juce::Graphics&, juce::Rectangle<int>, const MarkLabel&, bool selected, float fontSize);
+// Labels in a strip above a whole-song waveform. Each drawn label's box and its place in `labels`.
+void paintMarkerStrip(juce::Graphics&, juce::Rectangle<int> strip, const std::vector<MarkLabel>& labels, double duration,
+        std::vector<std::pair<juce::Rectangle<int>, int>>* hits, int selected);
 }
 
 class CrateMixer final : public juce::Component {
@@ -123,6 +139,8 @@ class CrateEcho final : public juce::Component {
   public:
     explicit CrateEcho(FourDeckMixer&);
     void setDeckCount(int);
+    // The free space after a deck's FX ON button (empty with four decks).
+    juce::Rectangle<int> spareArea(std::size_t deck) const { return deck < spare.size() ? spare[deck] : juce::Rectangle<int>{}; }
     void refresh();
     void paint(juce::Graphics&) override;
     void resized() override;
@@ -134,7 +152,7 @@ class CrateEcho final : public juce::Component {
     std::array<juce::ComboBox, 4> effects;
     juce::Slider depth;
     std::array<juce::TextButton, 4> armed, engaged;
-    std::array<juce::Rectangle<int>, 4> groups;
+    std::array<juce::Rectangle<int>, 4> groups, spare;
     juce::Rectangle<int> centre;
 };
 
@@ -175,6 +193,11 @@ class CrateLibrary final : public juce::Component, public juce::FileDragAndDropT
     std::function<void(int, const juce::File&)> onLoadSuggested;
     std::function<void(int, const juce::File&, int, const juce::File&,
             const std::optional<GoodMixxHistory::Points>&)> onRecallMix;
+    // The GOOD MIXX strips (saved mixes, and suggestions) refresh when the next-track list changes.
+    std::function<void()> onMixesChanged;
+    // When the FX bar has no room for the strips, they sit at the top of the right-hand panel.
+    void setStripsInSidebar(bool);
+    juce::Rectangle<int> sidebarStripArea() const { return stripArea; }
     void paint(juce::Graphics&) override;
     void paintOverChildren(juce::Graphics&) override;
     void resized() override;
@@ -187,6 +210,9 @@ class CrateLibrary final : public juce::Component, public juce::FileDragAndDropT
     static constexpr const char* dragPrefix = "spindeck-track:";
 
   private:
+    friend class GoodMixxStrip;
+    bool stripsInSidebar = false;
+    juce::Rectangle<int> stripArea;
     bool fileDragHover = false;
     int getNumRows() override;
     void paintRowBackground(juce::Graphics&, int, int, int, bool) override;
@@ -225,6 +251,7 @@ class CrateLibrary final : public juce::Component, public juce::FileDragAndDropT
         int outgoingDeck = -1;
         juce::File outgoingFile{};
         std::optional<GoodMixxHistory::Points> points{};
+        juce::String tag{}; // Proven, MATCH, MOOD, BOOST or NEAR
     };
 
     class MixList final : public juce::ListBoxModel {
@@ -258,7 +285,7 @@ class CrateLibrary final : public juce::Component, public juce::FileDragAndDropT
     void makeStemsFor(const std::vector<juce::File>&);
     void analyzeFiles(const std::vector<juce::File>&, bool onlyMissing);
     std::vector<juce::File> playlistFiles(int playlist) const; // -1 is the whole library.
-    void showMixMenu();
+    void showMixMenu(juce::Component* target = nullptr);
 
     TrackMetadataStore metadata;
     const juce::File crateDatabase;
@@ -305,6 +332,26 @@ class CrateLibrary final : public juce::Component, public juce::FileDragAndDropT
     std::shared_ptr<std::atomic<bool>> tagScanCancel = std::make_shared<std::atomic<bool>>(false);
     std::map<juce::String, bool> stemMarks;
     bool hasStems(const juce::File&);
+};
+
+
+// A GOOD MIXX strip in the FX bar: saved mixes (left) or suggested next songs (right), one at a time,
+// stepped through with the up/down arrows.
+class GoodMixxStrip final : public juce::Component {
+  public:
+    GoodMixxStrip(CrateLibrary&, bool saved);
+    void refresh();
+    void paint(juce::Graphics&) override;
+    void resized() override;
+
+  private:
+    std::vector<const CrateLibrary::MixRow*> rows() const;
+    CrateLibrary& library;
+    bool saved;
+    int index = 0;
+    bool narrow = false;
+    juce::TextButton up, down, action, menu;
+    juce::Rectangle<int> tagArea, textArea, badgeArea;
 };
 
 }

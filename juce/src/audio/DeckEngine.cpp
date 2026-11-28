@@ -141,6 +141,13 @@ bool DeckEngine::load(const juce::File& file, Overview* overview) {
         hotCuePreview.reset();
         cues = {};
         hotLoops = {};
+        cueNames = metadata.cueNames;
+        cueColours = metadata.cueColours;
+        marks.clear();
+        for (const auto& marker : metadata.markers) {
+            if (marker.seconds < duration) marks.push_back(marker);
+        }
+        branchesOn = true;
         savedLoops.clear();
         for (const auto& range : metadata.savedLoops) {
             if (range.start >= 0 && range.end <= duration && (range.end - range.start) * rate >= 1) {
@@ -185,6 +192,11 @@ DeckEngine::Markers DeckEngine::markers() const {
         return result;
     }
     result.cue = cueFrame / sourceRate;
+    result.cueNames = cueNames;
+    result.cueColours = cueColours;
+    result.marks = marks;
+    result.branchesOn = branchesOn;
+    result.hasStems = stemPcm.front().getNumSamples() > 0;
     for (std::size_t i = 0; i < cues.size(); ++i) {
         if (cues[i]) {
             result.hotCues[i] = *cues[i] / sourceRate;
@@ -826,7 +838,174 @@ void DeckEngine::persistCue(const juce::File& track, std::size_t slot, std::opti
     recordSaveResult(track, metadataStore.edit(track, [slot, value](TrackMetadata& metadata) {
         metadata.cues[slot] = value;
         metadata.hotLoopEnds[slot].reset();
+        if (!value) {
+            metadata.cueNames[slot].clear();
+            metadata.cueColours[slot] = 0;
+        }
     }));
+}
+
+// Called with trackEditMutex held and the state mutex free.
+void DeckEngine::persistMarkers() {
+    juce::File track;
+    std::array<juce::String, 8> names;
+    std::array<juce::uint32, 8> colours;
+    std::array<std::optional<double>, 8> cueSeconds;
+    std::vector<TrackMarker> list;
+    {
+        const std::lock_guard lock(mutex);
+        if (loadedTrack == juce::File{} || sourceRate <= 0) return;
+        track = loadedTrack;
+        names = cueNames;
+        colours = cueColours;
+        list = marks;
+        for (std::size_t i = 0; i < cues.size(); ++i) {
+            if (cues[i]) cueSeconds[i] = *cues[i] / sourceRate;
+        }
+    }
+    recordSaveResult(track, metadataStore.edit(track, [&](TrackMetadata& metadata) {
+        metadata.cueNames = names;
+        metadata.cueColours = colours;
+        metadata.markers = list;
+        for (std::size_t i = 0; i < cueSeconds.size(); ++i) {
+            if (cueSeconds[i] && metadata.cues[i] && std::abs(*metadata.cues[i] - *cueSeconds[i]) > 1e-6) {
+                const auto length = metadata.hotLoopEnds[i] ? *metadata.hotLoopEnds[i] - *metadata.cues[i] : 0.0;
+                metadata.cues[i] = cueSeconds[i];
+                if (metadata.hotLoopEnds[i]) metadata.hotLoopEnds[i] = *cueSeconds[i] + length;
+            }
+        }
+    }));
+}
+
+double DeckEngine::snapSeconds(double seconds) const {
+    const std::lock_guard lock(mutex);
+    if (!quantizeEnabled || !grid || sourceRate <= 0 || pcm.getNumSamples() == 0) return seconds;
+    return nearestBeat(seconds * sourceRate, pcm.getNumSamples() - 1.0) / sourceRate;
+}
+
+void DeckEngine::setCueLabel(std::size_t slot, const juce::String& name, juce::uint32 colour) {
+    const std::lock_guard edits(trackEditMutex);
+    {
+        const std::lock_guard lock(mutex);
+        if (slot >= cues.size() || !cues[slot]) return;
+        cueNames[slot] = name.substring(0, 40);
+        cueColours[slot] = colour;
+    }
+    persistMarkers();
+}
+
+void DeckEngine::moveHotCue(std::size_t slot, double seconds) {
+    const std::lock_guard edits(trackEditMutex);
+    {
+        const std::lock_guard lock(mutex);
+        if (slot >= cues.size() || !cues[slot] || sourceRate <= 0) return;
+        const double target = std::clamp(seconds < 0 ? transportFrame() : seconds * sourceRate,
+                0.0, std::max(0.0, pcm.getNumSamples() - 1.0));
+        if (hotLoops[slot]) {
+            const double length = hotLoops[slot]->end - hotLoops[slot]->start;
+            hotLoops[slot]->start = target;
+            hotLoops[slot]->end = target + length;
+        }
+        cues[slot] = target;
+    }
+    persistMarkers();
+}
+
+void DeckEngine::placeHotCue(std::size_t slot, double seconds) {
+    const std::lock_guard edits(trackEditMutex);
+    juce::File track;
+    {
+        const std::lock_guard lock(mutex);
+        if (slot >= cues.size() || sourceRate <= 0 || pcm.getNumSamples() == 0) return;
+        cues[slot] = std::clamp(seconds * sourceRate, 0.0, pcm.getNumSamples() - 1.0);
+        hotLoops[slot].reset();
+        track = loadedTrack;
+        seconds = *cues[slot] / sourceRate;
+    }
+    persistCue(track, slot, seconds);
+}
+
+int DeckEngine::addMarker(TrackMarker marker) {
+    const std::lock_guard edits(trackEditMutex);
+    int index = -1;
+    {
+        const std::lock_guard lock(mutex);
+        if (sourceRate <= 0 || pcm.getNumSamples() == 0 || marks.size() >= 256) return -1;
+        if (marker.seconds < 0) marker.seconds = transportFrame() / sourceRate;
+        marker.seconds = std::clamp(marker.seconds, 0.0, pcm.getNumSamples() / sourceRate);
+        const auto at = std::upper_bound(marks.begin(), marks.end(), marker.seconds,
+                [](double s, const TrackMarker& m) { return s < m.seconds; });
+        const auto inserted = marks.insert(at, marker);
+        index = static_cast<int>(inserted - marks.begin());
+    }
+    persistMarkers();
+    return index;
+}
+
+int DeckEngine::updateMarker(std::size_t index, TrackMarker marker) {
+    const std::lock_guard edits(trackEditMutex);
+    int result = -1;
+    {
+        const std::lock_guard lock(mutex);
+        if (index >= marks.size() || sourceRate <= 0) return -1;
+        if (marker.seconds < 0) marker.seconds = transportFrame() / sourceRate;
+        marker.seconds = std::clamp(marker.seconds, 0.0, pcm.getNumSamples() / sourceRate);
+        marks.erase(marks.begin() + static_cast<std::ptrdiff_t>(index));
+        const auto at = std::upper_bound(marks.begin(), marks.end(), marker.seconds,
+                [](double s, const TrackMarker& m) { return s < m.seconds; });
+        const auto inserted = marks.insert(at, marker);
+        result = static_cast<int>(inserted - marks.begin());
+    }
+    persistMarkers();
+    return result;
+}
+
+void DeckEngine::removeMarker(std::size_t index) {
+    const std::lock_guard edits(trackEditMutex);
+    {
+        const std::lock_guard lock(mutex);
+        if (index >= marks.size()) return;
+        marks.erase(marks.begin() + static_cast<std::ptrdiff_t>(index));
+    }
+    persistMarkers();
+}
+
+void DeckEngine::setBranchesEnabled(bool enabled) {
+    const std::lock_guard lock(mutex);
+    branchesOn = enabled;
+}
+
+bool DeckEngine::branchesEnabled() const {
+    const std::lock_guard lock(mutex);
+    return branchesOn;
+}
+
+void DeckEngine::applyBranches(double from, double to) {
+    if (!branchesOn || marks.empty() || stemPcm.front().getNumSamples() == 0 || sourceRate <= 0) return;
+    // Forward play crosses (from, to]; a loop wrap crosses (from, end of loop) and [start of loop, to].
+    const TrackMarker* last = nullptr;
+    for (const auto& marker : marks) {
+        if (marker.kind != TrackMarker::Kind::branch) continue;
+        const double at = marker.seconds * sourceRate;
+        const bool crossed = to >= from ? (at > from && at <= to) : (at > from || at <= to);
+        if (crossed) last = &marker;
+    }
+    if (last != nullptr && stemMutes != last->mutedStems) {
+        stemMutes = last->mutedStems;
+        keyLock->speed = 0;
+    }
+}
+
+void DeckEngine::applyBranchAt(double position) {
+    if (!branchesOn || marks.empty() || stemPcm.front().getNumSamples() == 0 || sourceRate <= 0) return;
+    const TrackMarker* last = nullptr;
+    for (const auto& marker : marks) {
+        if (marker.kind == TrackMarker::Kind::branch && marker.seconds * sourceRate <= position + 0.5) last = &marker;
+    }
+    if (last != nullptr && stemMutes != last->mutedStems) {
+        stemMutes = last->mutedStems;
+        keyLock->speed = 0;
+    }
 }
 
 void DeckEngine::setKeyLock(bool enabled) {
@@ -1283,6 +1462,18 @@ void DeckEngine::render(const juce::AudioSourceChannelInfo& info, double deviceR
     if (!playing || info.numSamples <= 0) {
         return;
     }
+    // Branches: after a jump the stems match the last branch before the new spot; while playing, each
+    // branch passed switches them.
+    if (branchJumps != jumps) {
+        branchJumps = jumps;
+        applyBranchAt(frame);
+    }
+    const double branchFrom = frame;
+    const struct BranchCheck {
+        DeckEngine& deck;
+        double from;
+        ~BranchCheck() { if (deck.branchJumps == deck.jumps) deck.applyBranches(from, deck.frame); }
+    } branchCheck{*this, branchFrom};
     const double stride = sourceRate * speed / deviceRate;
     int rendered = 0;
     if (pending) {

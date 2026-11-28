@@ -35,6 +35,10 @@ class DeckPanel final : public juce::Component, public juce::DragAndDropTarget,
     std::function<void(const juce::File&, std::optional<double>, double)> onTrackLoaded;
     std::function<void()> onGridChanged; // after half/double BPM from the BPM number
     void showBpmMenu();
+    // A cue, mix marker or branch was clicked (or right-clicked) to edit; or + MARKER / + BRANCH was pressed.
+    std::function<void(std::size_t deck, crate::MarkLabel::Kind, int index)> onEditMarker;
+    void setSelectedLabel(std::optional<std::pair<crate::MarkLabel::Kind, int>> label);
+    void addMarker(bool branch);
     void paintWaveLane(juce::Graphics&, juce::Rectangle<int>) const;
     void paint(juce::Graphics& graphics) override;
     void resized() override;
@@ -51,6 +55,16 @@ class DeckPanel final : public juce::Component, public juce::DragAndDropTarget,
     juce::Rectangle<int> overviewBounds, artBounds, headerRight, stemLabel;
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
+    void mouseUp(const juce::MouseEvent&) override;
+    juce::Rectangle<int> labelStrip;
+    std::vector<crate::MarkLabel> shownLabels;
+    std::vector<std::pair<juce::Rectangle<int>, int>> labelHits;
+    int dragLabel = -1;
+    double dragSeconds = 0;
+    bool dragMoved = false;
+    int padMenu = -1;
+    std::optional<std::pair<crate::MarkLabel::Kind, int>> selectedLabel;
+    juce::TextButton addMarkerButton{"+ MARKER"}, addBranchButton{"+ BRANCH"}, branchesButton{"BRANCHES"};
     void seekFromOverview(juce::Point<int>);
     void pickLoopSize(std::size_t button);
     juce::Label artist, keyLabel, bpmLabel, remaining, total;
@@ -135,6 +149,58 @@ class GridTools final : public juce::Component {
     GridIconButton lock{GridIconButton::Icon::lock, "Lock the beat grid so it can't be changed by accident."};
 };
 
+// The left-hand Cues & Markers panel. Hidden until a label is clicked, a hot cue pad is right-clicked, or
+// + MARKER / + BRANCH is pressed, so the song list gets the room the rest of the time.
+class CueMarkerPanel final : public juce::Component, private juce::ListBoxModel {
+  public:
+    explicit CueMarkerPanel(FourDeckMixer&);
+    void edit(std::size_t deck, crate::MarkLabel::Kind kind, int index);
+    void refresh();
+    std::size_t deck() const { return deckIndex; }
+    std::optional<std::pair<crate::MarkLabel::Kind, int>> selection() const { return selected; }
+    std::function<void()> onClose;
+    std::function<void()> onSelectionChanged;
+    std::function<void(std::size_t deck, bool branch)> onAdd;
+    std::function<void(const juce::String&)> onMessage;
+    void paint(juce::Graphics&) override;
+    void resized() override;
+
+  private:
+    class ColourDot final : public juce::Button {
+      public:
+        ColourDot() : juce::Button({}) {}
+        juce::Colour colour;
+        void paintButton(juce::Graphics&, bool over, bool down) override;
+    };
+    int getNumRows() override;
+    void paintListBoxItem(int row, juce::Graphics&, int width, int height, bool selected) override;
+    void listBoxItemClicked(int row, const juce::MouseEvent&) override;
+    DeckEngine& engine() { return mixer.deck(deckIndex); }
+    void select(crate::MarkLabel::Kind kind, int index);
+    void loadEditor();
+    void apply();
+    void setType(crate::MarkLabel::Kind type);
+
+    FourDeckMixer& mixer;
+    std::size_t deckIndex = 0;
+    std::optional<std::pair<crate::MarkLabel::Kind, int>> selected;
+    std::vector<crate::MarkLabel> labels;
+    DeckEngine::Markers markers;
+    juce::String loadedKey;
+    juce::uint32 colour = 0;
+    bool updating = false;
+    juce::Rectangle<int> headingArea, editorTop;
+    juce::TextButton close;
+    juce::ListBox list{"Cues and markers", this};
+    std::array<juce::TextButton, 3> types;
+    juce::TextEditor name;
+    std::array<ColourDot, 6> colours;
+    juce::Label stemsLabel{{}, "Stems from here:"};
+    std::array<juce::ToggleButton, 4> stems;
+    juce::TextButton toPlayhead{"Move to playhead"}, remove{"Delete"}, addMarker{"+ MARKER"}, addBranch{"+ BRANCH"};
+    juce::Label hint;
+};
+
 class StemQueueWindow;
 
 class MainComponent final : public juce::AudioAppComponent, public juce::DragAndDropContainer,
@@ -217,6 +283,12 @@ class MainComponent final : public juce::AudioAppComponent, public juce::DragAnd
     int stemMarkerTicks = 0;
     std::array<std::unique_ptr<DeckPanel>, 4> panels;
     std::array<std::unique_ptr<GridTools>, 4> gridTools;
+    CueMarkerPanel cuePanel{mixer};
+    GoodMixxStrip savedStrip{library, true}, suggestedStrip{library, false};
+    int cuePanelTicks = 0;
+    void showCuePanel(std::size_t deck, crate::MarkLabel::Kind kind, int index);
+    void hideCuePanel();
+    void highlightCueSelection();
     static constexpr int gridToolsWidth = 112;
     juce::Label buildLabel;
     juce::TextButton makeStemsButton{"MAKE STEMS"};

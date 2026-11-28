@@ -249,14 +249,39 @@ DeckPanel::DeckPanel(std::size_t panelIndex, FourDeckMixer& deckMixer)
         button.getProperties().set("fontSize", 16.0f);
         button.setTooltip("Set or jump to hot cue. Shift-click clears it.");
         button.onClick = [this, i] {
+            if (padMenu == static_cast<int>(i)) {
+                // Right-click: edit this cue's name, colour and spot.
+                padMenu = -1;
+                if (engine.hasHotCue(i) && onEditMarker) onEditMarker(deckIndex, crate::MarkLabel::Kind::cue, static_cast<int>(i));
+                return;
+            }
             if (juce::ModifierKeys::getCurrentModifiersRealtime().isShiftDown()) {
                 engine.clearHotCue(i);
             } else {
                 engine.triggerHotCue(i);
             }
         };
+        button.addMouseListener(this, false);
         addAndMakeVisible(button);
     }
+    for (auto* small : {&addMarkerButton, &addBranchButton, &branchesButton}) {
+        small->getProperties().set("fontSize", 9.5f);
+        addAndMakeVisible(*small);
+    }
+    addMarkerButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff7dd3fc));
+    addBranchButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffe9d5ff));
+    addMarkerButton.setTooltip("Add a mix marker with your own text at the playhead.");
+    addBranchButton.setTooltip("Add a branch at the playhead: when the song plays past it, the stems switch the way you set.");
+    branchesButton.setTooltip("Branches on this deck switch stems by themselves. Turn off to play the song as it is.");
+    branchesButton.setClickingTogglesState(false);
+    branchesButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff6d28d9));
+    branchesButton.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+    addMarkerButton.onClick = [this] { addMarker(false); };
+    addBranchButton.onClick = [this] { addMarker(true); };
+    branchesButton.onClick = [this] {
+        engine.setBranchesEnabled(!engine.branchesEnabled());
+        timerCallback();
+    };
     constexpr std::array labels{"Drums", "Bass", "Other", "Vocals"};
 
     for (std::size_t i = 0; i < stemButtons.size(); ++i) {
@@ -339,7 +364,23 @@ void DeckPanel::paint(juce::Graphics& g) {
         g.drawText(artistInitials.isEmpty() ? juce::String(static_cast<int>(deckIndex + 1)) : artistInitials,
                 artBounds, juce::Justification::centred);
     }
-    const auto markers = engine.markers();
+    auto markers = engine.markers();
+    auto labels = crate::markLabels(markers);
+    if (dragLabel >= 0 && dragLabel < static_cast<int>(labels.size())) {
+        // Show the label (and its line) where it is being dragged to.
+        auto& dragged = labels[static_cast<std::size_t>(dragLabel)];
+        dragged.seconds = dragSeconds;
+        if (dragged.kind == crate::MarkLabel::Kind::cue) markers.hotCues[static_cast<std::size_t>(dragged.index)] = dragSeconds;
+        else if (dragged.index < static_cast<int>(markers.marks.size())) markers.marks[static_cast<std::size_t>(dragged.index)].seconds = dragSeconds;
+    }
+    int selectedIndex = -1;
+    for (std::size_t i = 0; i < labels.size(); ++i) {
+        if (selectedLabel && labels[i].kind == selectedLabel->first && labels[i].index == selectedLabel->second) {
+            selectedIndex = static_cast<int>(i);
+        }
+    }
+    shownLabels = labels;
+    crate::paintMarkerStrip(g, labelStrip, labels, engine.durationSeconds(), &labelHits, selectedIndex);
     crate::paintWave(g, overviewBounds, &overview, engine.positionSeconds(), {}, false, deckAccent(deckIndex), &markers);
     if (!stemLabel.isEmpty()) {
         g.setColour(crate::muted);
@@ -443,11 +484,85 @@ void DeckPanel::refreshFonts() {
 }
 
 void DeckPanel::mouseDown(const juce::MouseEvent& event) {
+    if (event.eventComponent != this) {
+        // A hot cue pad: right-click opens its editor instead of jumping.
+        for (std::size_t i = 0; i < cues.size(); ++i) {
+            if (event.eventComponent == &cues[i]) padMenu = event.mods.isPopupMenu() ? static_cast<int>(i) : -1;
+        }
+        return;
+    }
     if (bpmLabel.getBounds().contains(event.getPosition())) {
         showBpmMenu();
         return;
     }
+    dragLabel = -1;
+    dragMoved = false;
+    if (labelStrip.contains(event.getPosition())) {
+        for (auto it = labelHits.rbegin(); it != labelHits.rend(); ++it) {
+            if (!it->first.contains(event.getPosition())) continue;
+            const auto& label = shownLabels[static_cast<std::size_t>(it->second)];
+            if (event.mods.isPopupMenu()) {
+                if (onEditMarker) onEditMarker(deckIndex, label.kind, label.index);
+            } else {
+                dragLabel = it->second;
+                dragSeconds = label.seconds;
+            }
+            return;
+        }
+        return;
+    }
     seekFromOverview(event.getPosition());
+}
+
+void DeckPanel::mouseUp(const juce::MouseEvent& event) {
+    if (event.eventComponent != this || dragLabel < 0 || dragLabel >= static_cast<int>(shownLabels.size())) {
+        dragLabel = -1;
+        return;
+    }
+    const auto label = shownLabels[static_cast<std::size_t>(dragLabel)];
+    dragLabel = -1;
+    if (!dragMoved) {
+        if (onEditMarker) onEditMarker(deckIndex, label.kind, label.index); // a click: edit it
+        repaint();
+        return;
+    }
+    const double seconds = engine.snapSeconds(dragSeconds);
+    if (label.kind == crate::MarkLabel::Kind::cue) {
+        engine.moveHotCue(static_cast<std::size_t>(label.index), seconds);
+    } else {
+        const auto marks = engine.markers().marks;
+        if (label.index < static_cast<int>(marks.size())) {
+            auto moved = marks[static_cast<std::size_t>(label.index)];
+            moved.seconds = seconds;
+            const int index = engine.updateMarker(static_cast<std::size_t>(label.index), moved);
+            if (selectedLabel && selectedLabel->first == label.kind && selectedLabel->second == label.index && index >= 0) {
+                if (onEditMarker) onEditMarker(deckIndex, label.kind, index);
+            }
+        }
+    }
+    repaint();
+}
+
+void DeckPanel::setSelectedLabel(std::optional<std::pair<crate::MarkLabel::Kind, int>> label) {
+    if (selectedLabel != label) {
+        selectedLabel = label;
+        repaint(labelStrip);
+    }
+}
+
+void DeckPanel::addMarker(bool branch) {
+    if (engine.durationSeconds() <= 0) return;
+    TrackMarker marker;
+    marker.kind = branch ? TrackMarker::Kind::branch : TrackMarker::Kind::mix;
+    marker.seconds = engine.snapSeconds(engine.positionSeconds());
+    marker.text = branch ? "BRANCH" : "MIX";
+    // A new branch keeps the stems as they are right now; change them in the editor.
+    if (branch) marker.mutedStems = engine.mutedStems().value_or(0);
+    const int index = engine.addMarker(marker);
+    if (index >= 0 && onEditMarker) {
+        onEditMarker(deckIndex, branch ? crate::MarkLabel::Kind::branch : crate::MarkLabel::Kind::mix, index);
+    }
+    repaint();
 }
 
 // Click the big BPM number: fix a track read at double or half its real tempo (170 -> 85).
@@ -498,6 +613,16 @@ void DeckPanel::showBpmMenu() {
 }
 
 void DeckPanel::mouseDrag(const juce::MouseEvent& event) {
+    if (event.eventComponent != this) return;
+    if (dragLabel >= 0) {
+        if (event.getDistanceFromDragStart() > 3) dragMoved = true;
+        if (dragMoved && engine.durationSeconds() > 0 && labelStrip.getWidth() > 0) {
+            const double fraction = (event.x - labelStrip.getX()) / static_cast<double>(labelStrip.getWidth());
+            dragSeconds = engine.snapSeconds(juce::jlimit(0.0, 1.0, fraction) * engine.durationSeconds());
+            repaint(labelStrip.getUnion(overviewBounds));
+        }
+        return;
+    }
     seekFromOverview(event.getPosition());
 }
 
@@ -532,6 +657,9 @@ void DeckPanel::resized() {
 
     auto top = area.removeFromTop(16);
     title.setBounds(top.removeFromLeft(60));
+    addMarkerButton.setBounds(top.removeFromLeft(62).reduced(1, 0));
+    addBranchButton.setBounds(top.removeFromLeft(62).reduced(1, 0));
+    branchesButton.setBounds(top.removeFromLeft(78).reduced(1, 0));
     load.setBounds(top.removeFromRight(52).reduced(1, 0));
     if (savedLoops.isVisible()) {
         savedLoops.setBounds(top.removeFromRight(86).reduced(1, 0));
@@ -590,6 +718,8 @@ void DeckPanel::resized() {
         pair(quantize, keyLock);
         pair(leader, deckKey);
     }
+    // The song waveform is slimmer, with a strip above it for cue, mix marker and branch labels.
+    labelStrip = strip.removeFromTop(compact ? 13 : 24);
     overviewBounds = strip;
     area.removeFromTop(gap);
 
@@ -803,6 +933,16 @@ void DeckPanel::timerCallback() {
     for (std::size_t i = 0; i < stemButtons.size(); ++i) {
         stemButtons[i].setEnabled(muted.has_value());
         stemButtons[i].setToggleState(muted.has_value() && (*muted & (1u << i)) == 0, juce::dontSendNotification);
+        {
+            constexpr std::array names{"Drums", "Bass", "Other", "Vocals"};
+            const bool off = muted.has_value() && (*muted & (1u << i)) != 0;
+            const juce::String text = juce::String(names[i]) + (off ? " OFF" : "");
+            if (stemButtons[i].getButtonText() != text) {
+                stemButtons[i].setButtonText(text);
+                stemButtons[i].setColour(juce::TextButton::buttonColourId, off ? juce::Colour(0xff3a1520) : crate::control);
+                stemButtons[i].setColour(juce::TextButton::textColourOffId, off ? juce::Colour(0xffffadc0) : crate::text);
+            }
+        }
         stemVolumes[i].setEnabled(muted.has_value());
         stemFx[i].setEnabled(muted.has_value());
         stemFx[i].setToggleState((sends & (1u << i)) != 0, juce::dontSendNotification);
@@ -846,7 +986,13 @@ void DeckPanel::timerCallback() {
             : grid && grid->markers ? "Grid  " + juce::String(grid->tempoAt(engine.positionSeconds()), 1) + " BPM"
             : grid ? "Beat 1  " + juce::String(grid->anchorSeconds, 1) + " s"
                    : loaded ? "Set beat grid" : "", juce::dontSendNotification);
-    repaint(overviewBounds);
+    repaint(overviewBounds.getUnion(labelStrip));
+    {
+        const bool on = engine.branchesEnabled();
+        branchesButton.setToggleState(on, juce::dontSendNotification);
+        branchesButton.setButtonText(on ? "BRANCHES ON" : "BRANCHES OFF");
+        for (auto* button : {&addMarkerButton, &addBranchButton, &branchesButton}) button->setEnabled(loaded);
+    }
     play.setEnabled(loaded);
     position.setEnabled(loaded);
     // Enabled below once the grid lock is known.
@@ -895,6 +1041,371 @@ void DeckPanel::timerCallback() {
                                   : "Set or jump to hot cue. Shift-click clears it.");
         cues[i].setToggleState(engine.hasHotCue(i), juce::dontSendNotification);
     }
+}
+
+//==============================================================================
+// AI-written (Claude). Review before relying on it.
+// Cues & Markers panel: edit a hot cue's name, colour and spot, or a mix marker / branch.
+// AI-written (Claude). End.
+CueMarkerPanel::CueMarkerPanel(FourDeckMixer& source) : mixer(source) {
+    close.setButtonText(juce::String::fromUTF8("\xE2\x9C\x95"));
+    close.setTooltip("Close (Esc)");
+    close.onClick = [this] { if (onClose) onClose(); };
+    addAndMakeVisible(close);
+    list.setRowHeight(22);
+    list.setColour(juce::ListBox::backgroundColourId, crate::panel);
+    list.setOutlineThickness(0);
+    addAndMakeVisible(list);
+    constexpr std::array typeNames{"Cue", "Marker", "Branch"};
+    for (std::size_t i = 0; i < types.size(); ++i) {
+        types[i].setButtonText(typeNames[i]);
+        types[i].getProperties().set("fontSize", 11.0f);
+        types[i].setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xff6d28d9));
+        types[i].setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+        types[i].onClick = [this, i] { setType(static_cast<crate::MarkLabel::Kind>(i)); };
+        addAndMakeVisible(types[i]);
+    }
+    name.setTextToShowWhenEmpty("Name, e.g. DROP or bring in vocals", crate::muted);
+    name.setInputRestrictions(40);
+    name.onTextChange = [this] { apply(); };
+    name.onReturnKey = [this] { name.giveAwayKeyboardFocus(); };
+    addAndMakeVisible(name);
+    for (std::size_t i = 0; i < colours.size(); ++i) {
+        colours[i].colour = juce::Colour(crate::markerColours[i]);
+        colours[i].setTitle("Colour " + juce::String(static_cast<int>(i + 1)));
+        colours[i].onClick = [this, i] {
+            colour = crate::markerColours[i];
+            apply();
+        };
+        addAndMakeVisible(colours[i]);
+    }
+    stemsLabel.setColour(juce::Label::textColourId, crate::muted);
+    stemsLabel.setFont(juce::FontOptions(12.0f));
+    addAndMakeVisible(stemsLabel);
+    constexpr std::array stemNames{"Drums", "Bass", "Other", "Vocals"};
+    for (std::size_t i = 0; i < stems.size(); ++i) {
+        stems[i].setButtonText(stemNames[i]);
+        stems[i].onClick = [this] { apply(); };
+        addAndMakeVisible(stems[i]);
+    }
+    toPlayhead.getProperties().set("fontSize", 11.0f);
+    remove.getProperties().set("fontSize", 11.0f);
+    remove.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff3a1515));
+    remove.setColour(juce::TextButton::textColourOffId, juce::Colour(0xfffca5a5));
+    toPlayhead.onClick = [this] {
+        if (!selected) return;
+        const auto [kind, index] = *selected;
+        if (kind == crate::MarkLabel::Kind::cue) {
+            engine().moveHotCue(static_cast<std::size_t>(index), -1);
+        } else if (index < static_cast<int>(markers.marks.size())) {
+            auto mark = markers.marks[static_cast<std::size_t>(index)];
+            mark.seconds = engine().snapSeconds(engine().positionSeconds());
+            select(kind, engine().updateMarker(static_cast<std::size_t>(index), mark));
+        }
+        refresh();
+    };
+    remove.onClick = [this] {
+        if (!selected) return;
+        const auto [kind, index] = *selected;
+        if (kind == crate::MarkLabel::Kind::cue) engine().clearHotCue(static_cast<std::size_t>(index));
+        else engine().removeMarker(static_cast<std::size_t>(index));
+        selected.reset();
+        loadedKey.clear();
+        if (onSelectionChanged) onSelectionChanged();
+        refresh();
+    };
+    addMarker.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff7dd3fc));
+    addBranch.setColour(juce::TextButton::textColourOffId, juce::Colour(0xffe9d5ff));
+    addMarker.onClick = [this] { if (onAdd) onAdd(deckIndex, false); };
+    addBranch.onClick = [this] { if (onAdd) onAdd(deckIndex, true); };
+    for (auto* button : {&toPlayhead, &remove, &addMarker, &addBranch}) addAndMakeVisible(*button);
+    hint.setColour(juce::Label::textColourId, crate::muted);
+    hint.setFont(juce::FontOptions(12.0f));
+    hint.setJustificationType(juce::Justification::topLeft);
+    hint.setText("Click a label on a waveform, or right-click a hot cue pad, to edit it here. Drag a label to move it.",
+            juce::dontSendNotification);
+    addAndMakeVisible(hint);
+}
+
+void CueMarkerPanel::ColourDot::paintButton(juce::Graphics& g, bool over, bool) {
+    const auto r = getLocalBounds().toFloat().reduced(3.0f);
+    g.setColour(colour.withAlpha(isEnabled() ? 1.0f : 0.35f));
+    g.fillEllipse(r);
+    if (getToggleState() || over) {
+        g.setColour(juce::Colours::white.withAlpha(getToggleState() ? 1.0f : 0.5f));
+        g.drawEllipse(r.expanded(1.5f), 2.0f);
+    }
+}
+
+void CueMarkerPanel::edit(std::size_t deck, crate::MarkLabel::Kind kind, int index) {
+    deckIndex = deck;
+    select(kind, index);
+    refresh();
+}
+
+void CueMarkerPanel::select(crate::MarkLabel::Kind kind, int index) {
+    if (index < 0) {
+        selected.reset();
+    } else {
+        selected = std::pair{kind, index};
+    }
+    loadedKey.clear();
+    if (onSelectionChanged) onSelectionChanged();
+}
+
+void CueMarkerPanel::refresh() {
+    markers = engine().markers();
+    labels = crate::markLabels(markers);
+    if (selected) {
+        const auto [kind, index] = *selected;
+        const bool exists = kind == crate::MarkLabel::Kind::cue
+                ? index < static_cast<int>(markers.hotCues.size()) && markers.hotCues[static_cast<std::size_t>(index)].has_value()
+                : index < static_cast<int>(markers.marks.size());
+        if (exists && kind != crate::MarkLabel::Kind::cue) {
+            // Always go by the marker's own type.
+            const auto actual = markers.marks[static_cast<std::size_t>(index)].kind == TrackMarker::Kind::branch
+                    ? crate::MarkLabel::Kind::branch : crate::MarkLabel::Kind::mix;
+            if (actual != kind) {
+                selected = std::pair{actual, index};
+                if (onSelectionChanged) onSelectionChanged();
+            }
+        }
+        if (!exists) {
+            selected.reset();
+            loadedKey.clear();
+            if (onSelectionChanged) onSelectionChanged();
+        }
+    }
+    list.updateContent();
+    for (std::size_t i = 0; i < labels.size(); ++i) {
+        if (selected && labels[i].kind == selected->first && labels[i].index == selected->second) {
+            list.selectRow(static_cast<int>(i), true, true);
+        }
+    }
+    if (!selected) list.deselectAllRows();
+    // Only reload the editor when the selection changes, so typing is never interrupted.
+    const auto key = selected ? juce::String(static_cast<int>(selected->first)) + ":" + juce::String(selected->second) +
+                    ":" + juce::String(static_cast<int>(deckIndex)) : juce::String("none");
+    if (key != loadedKey) {
+        loadedKey = key;
+        loadEditor();
+    }
+    list.repaint();
+    repaint(headingArea);
+}
+
+void CueMarkerPanel::loadEditor() {
+    const juce::ScopedValueSetter<bool> busy(updating, true);
+    const bool any = selected.has_value();
+    const auto kind = any ? selected->first : crate::MarkLabel::Kind::cue;
+    juce::String text;
+    uint8_t muted = 0;
+    colour = 0;
+    if (any && kind == crate::MarkLabel::Kind::cue) {
+        text = markers.cueNames[static_cast<std::size_t>(selected->second)];
+        colour = markers.cueColours[static_cast<std::size_t>(selected->second)];
+    } else if (any) {
+        const auto& mark = markers.marks[static_cast<std::size_t>(selected->second)];
+        text = mark.text;
+        colour = mark.colour;
+        muted = mark.mutedStems;
+    }
+    name.setText(text, juce::dontSendNotification);
+    for (std::size_t i = 0; i < types.size(); ++i) {
+        types[i].setToggleState(any && static_cast<std::size_t>(kind) == i, juce::dontSendNotification);
+        types[i].setEnabled(any);
+    }
+    for (std::size_t i = 0; i < colours.size(); ++i) {
+        colours[i].setToggleState(any && colour == crate::markerColours[i], juce::dontSendNotification);
+        colours[i].setEnabled(any);
+    }
+    const bool branch = any && kind == crate::MarkLabel::Kind::branch;
+    for (std::size_t i = 0; i < stems.size(); ++i) {
+        stems[i].setToggleState((muted & (1u << i)) == 0, juce::dontSendNotification);
+        stems[i].setVisible(branch);
+    }
+    stemsLabel.setVisible(branch);
+    stemsLabel.setText(markers.hasStems ? "Stems from here:" : "Stems from here (this song has no stems yet):",
+            juce::dontSendNotification);
+    for (auto& type : types) type.setVisible(any);
+    for (auto& c : colours) c.setVisible(any);
+    for (auto* part : std::initializer_list<juce::Component*>{&name, &toPlayhead, &remove}) part->setVisible(any);
+    hint.setVisible(!any);
+    const bool loaded = engine().durationSeconds() > 0;
+    addMarker.setEnabled(loaded);
+    addBranch.setEnabled(loaded);
+    resized();
+}
+
+void CueMarkerPanel::apply() {
+    if (updating || !selected) return;
+    const auto [kind, index] = *selected;
+    for (std::size_t i = 0; i < colours.size(); ++i) {
+        colours[i].setToggleState(colour == crate::markerColours[i], juce::dontSendNotification);
+    }
+    if (kind == crate::MarkLabel::Kind::cue) {
+        engine().setCueLabel(static_cast<std::size_t>(index), name.getText().trim(), colour);
+    } else if (index < static_cast<int>(markers.marks.size())) {
+        auto mark = markers.marks[static_cast<std::size_t>(index)];
+        mark.text = name.getText().trim();
+        mark.colour = colour;
+        if (kind == crate::MarkLabel::Kind::branch) {
+            mark.mutedStems = 0;
+            for (std::size_t i = 0; i < stems.size(); ++i) {
+                if (!stems[i].getToggleState()) mark.mutedStems = static_cast<uint8_t>(mark.mutedStems | (1u << i));
+            }
+        }
+        const int moved = engine().updateMarker(static_cast<std::size_t>(index), mark);
+        if (moved >= 0 && moved != index) {
+            selected = std::pair{kind, moved};
+            loadedKey = juce::String(static_cast<int>(kind)) + ":" + juce::String(moved) + ":" + juce::String(static_cast<int>(deckIndex));
+            if (onSelectionChanged) onSelectionChanged();
+        }
+    }
+    markers = engine().markers();
+    labels = crate::markLabels(markers);
+    list.repaint();
+}
+
+void CueMarkerPanel::setType(crate::MarkLabel::Kind type) {
+    if (!selected || selected->first == type) {
+        loadedKey.clear();
+        refresh();
+        return;
+    }
+    using Kind = crate::MarkLabel::Kind;
+    const auto [kind, index] = *selected;
+    auto& deck = engine();
+    const auto defaultText = [](const juce::String& text) { return text.isEmpty() || text == "MIX" || text == "BRANCH"; };
+    if (kind == Kind::cue) {
+        const auto slot = static_cast<std::size_t>(index);
+        if (!markers.hotCues[slot]) return;
+        TrackMarker mark;
+        mark.kind = type == Kind::branch ? TrackMarker::Kind::branch : TrackMarker::Kind::mix;
+        mark.seconds = *markers.hotCues[slot];
+        mark.text = markers.cueNames[slot].isNotEmpty() ? markers.cueNames[slot]
+                                                        : juce::String(type == Kind::branch ? "BRANCH" : "MIX");
+        mark.colour = markers.cueColours[slot];
+        if (type == Kind::branch) mark.mutedStems = deck.mutedStems().value_or(0);
+        deck.clearHotCue(slot);
+        select(type, deck.addMarker(mark));
+    } else if (type == Kind::cue) {
+        std::optional<std::size_t> free;
+        for (std::size_t slot = 0; slot < markers.hotCues.size() && !free; ++slot) {
+            if (!markers.hotCues[slot]) free = slot;
+        }
+        if (!free) {
+            if (onMessage) onMessage("ALL 8 HOT CUES ARE IN USE");
+            return;
+        }
+        const auto mark = markers.marks[static_cast<std::size_t>(index)];
+        deck.placeHotCue(*free, mark.seconds);
+        deck.setCueLabel(*free, defaultText(mark.text) ? juce::String{} : mark.text, mark.colour);
+        deck.removeMarker(static_cast<std::size_t>(index));
+        select(Kind::cue, static_cast<int>(*free));
+    } else {
+        auto mark = markers.marks[static_cast<std::size_t>(index)];
+        mark.kind = type == Kind::branch ? TrackMarker::Kind::branch : TrackMarker::Kind::mix;
+        if (defaultText(mark.text)) mark.text = type == Kind::branch ? "BRANCH" : "MIX";
+        if (type == Kind::branch) mark.mutedStems = deck.mutedStems().value_or(0);
+        select(type, deck.updateMarker(static_cast<std::size_t>(index), mark));
+    }
+    refresh();
+}
+
+int CueMarkerPanel::getNumRows() {
+    return static_cast<int>(labels.size());
+}
+
+void CueMarkerPanel::paintListBoxItem(int row, juce::Graphics& g, int width, int height, bool isSelected) {
+    if (!juce::isPositiveAndBelow(row, static_cast<int>(labels.size()))) return;
+    const auto& label = labels[static_cast<std::size_t>(row)];
+    if (isSelected) {
+        g.setColour(juce::Colour(0xff2a1840));
+        g.fillRoundedRectangle(juce::Rectangle<float>(2, 1, static_cast<float>(width - 4), static_cast<float>(height - 2)), 4.0f);
+    }
+    const auto icon = juce::Rectangle<float>(8, height / 2.0f - 5, 10, 10);
+    g.setColour(label.colour);
+    if (label.kind == crate::MarkLabel::Kind::cue) {
+        g.fillRoundedRectangle(icon, 2.0f);
+    } else if (label.kind == crate::MarkLabel::Kind::mix) {
+        g.drawRoundedRectangle(icon, 2.0f, 2.0f);
+    } else {
+        juce::Path diamond;
+        diamond.addQuadrilateral(icon.getCentreX(), icon.getY() - 1, icon.getRight() + 1, icon.getCentreY(),
+                icon.getCentreX(), icon.getBottom() + 1, icon.getX() - 1, icon.getCentreY());
+        g.fillPath(diamond);
+    }
+    g.setColour(crate::text);
+    g.setFont(juce::FontOptions(13.0f, isSelected ? juce::Font::bold : juce::Font::plain));
+    g.drawText(label.text, 26, 0, width - 72, height, juce::Justification::centredLeft, true);
+    const int seconds = static_cast<int>(label.seconds);
+    g.setColour(crate::muted);
+    g.setFont(juce::FontOptions(12.0f));
+    g.drawText(juce::String(seconds / 60) + ":" + juce::String(seconds % 60).paddedLeft('0', 2), width - 50, 0, 44,
+            height, juce::Justification::centredRight);
+}
+
+void CueMarkerPanel::listBoxItemClicked(int row, const juce::MouseEvent&) {
+    if (juce::isPositiveAndBelow(row, static_cast<int>(labels.size()))) {
+        const auto& label = labels[static_cast<std::size_t>(row)];
+        select(label.kind, label.index);
+        refresh();
+    }
+}
+
+void CueMarkerPanel::paint(juce::Graphics& g) {
+    g.fillAll(crate::panel);
+    g.setColour(crate::line);
+    g.drawRect(getLocalBounds());
+    g.drawHorizontalLine(editorTop.getY() - 5, 8.0f, getWidth() - 8.0f);
+    g.setColour(crate::muted);
+    g.setFont(juce::FontOptions(11.5f, juce::Font::bold));
+    g.drawText("CUES & MARKERS", headingArea, juce::Justification::centredLeft);
+    g.setColour(crate::decks[deckIndex % crate::decks.size()]);
+    g.drawText("DECK " + juce::String(static_cast<int>(deckIndex + 1)), headingArea.withTrimmedLeft(110),
+            juce::Justification::centredLeft);
+}
+
+void CueMarkerPanel::resized() {
+    auto area = getLocalBounds().reduced(8, 6);
+    auto heading = area.removeFromTop(24);
+    close.setBounds(heading.removeFromRight(26).reduced(0, 1));
+    headingArea = heading;
+    area.removeFromTop(4);
+    const bool branch = stemsLabel.isVisible();
+    auto bottom = area.removeFromBottom(28);
+    addMarker.setBounds(bottom.removeFromLeft(bottom.getWidth() / 2).withTrimmedRight(3));
+    addBranch.setBounds(bottom.withTrimmedLeft(3));
+    area.removeFromBottom(6);
+    const int editorHeight = 26 + 6 + 28 + 6 + 26 + (branch ? 6 + 16 + 48 : 0) + 6 + 28;
+    auto editor = area.removeFromBottom(juce::jmin(area.getHeight() - 40, editorHeight));
+    area.removeFromBottom(10);
+    list.setBounds(area);
+    editorTop = editor;
+    hint.setBounds(editor);
+    auto row = editor.removeFromTop(26);
+    const int w = row.getWidth() / 3;
+    for (auto& type : types) type.setBounds(row.removeFromLeft(w).reduced(2, 0));
+    editor.removeFromTop(6);
+    name.setBounds(editor.removeFromTop(28));
+    editor.removeFromTop(6);
+    auto dots = editor.removeFromTop(26);
+    const int dot = juce::jmin(30, dots.getWidth() / static_cast<int>(colours.size()));
+    for (auto& c : colours) c.setBounds(dots.removeFromLeft(dot));
+    if (branch) {
+        editor.removeFromTop(6);
+        stemsLabel.setBounds(editor.removeFromTop(16));
+        for (std::size_t i = 0; i < stems.size(); ++i) {
+            const auto cell = editor.withHeight(24).withY(editor.getY() + static_cast<int>(i / 2) * 24);
+            stems[i].setBounds(i % 2 == 0 ? cell.withWidth(cell.getWidth() / 2) : cell.withTrimmedLeft(cell.getWidth() / 2));
+        }
+        editor.removeFromTop(48);
+    }
+    editor.removeFromTop(6);
+    auto buttons = editor.removeFromTop(28);
+    toPlayhead.setBounds(buttons.removeFromLeft(buttons.getWidth() * 58 / 100).withTrimmedRight(3));
+    remove.setBounds(buttons.withTrimmedLeft(3));
 }
 
 GridIconButton::GridIconButton(Icon kind, const juce::String& tip) : juce::Button({}), icon(kind) {
@@ -1083,8 +1594,22 @@ MainComponent::MainComponent()
             repaint(waveformArea);
         };
         panels[i]->onGridChanged = [this, i] { gridTools[i]->onGridChanged(); };
+        panels[i]->onEditMarker = [this](std::size_t deck, crate::MarkLabel::Kind kind, int index) {
+            showCuePanel(deck, kind, index);
+        };
         addChildComponent(*gridTools[i]);
     }
+    addChildComponent(cuePanel);
+    addAndMakeVisible(savedStrip);
+    addAndMakeVisible(suggestedStrip);
+    library.onMixesChanged = [this] {
+        savedStrip.refresh();
+        suggestedStrip.refresh();
+    };
+    cuePanel.onClose = [this] { hideCuePanel(); };
+    cuePanel.onSelectionChanged = [this] { highlightCueSelection(); };
+    cuePanel.onAdd = [this](std::size_t deck, bool branch) { panels[deck]->addMarker(branch); };
+    cuePanel.onMessage = [this](const juce::String& text) { showToast(text); };
 
     t7.onBrowse = [this](int steps) { library.moveSelection(steps); };
     t7.onLoad = [this](std::size_t index) {
@@ -1442,6 +1967,9 @@ MainComponent::~MainComponent() {
 }
 
 void MainComponent::timerCallback() {
+    if (cuePanel.isVisible() && ++cuePanelTicks % 4 == 0) {
+        cuePanel.refresh();
+    }
     if (mixer.isExternalMixing()) {
         // A different audio device was picked: open its deck outputs too.
         if (auto* device = deviceManager.getCurrentAudioDevice(); device != nullptr && device->getName() != externalMixerDevice) {
@@ -1878,7 +2406,32 @@ void MainComponent::parentHierarchyChanged() {
 
 // Master volume shortcuts, meant for an app-linked Ulanzi Dial preset:
 // Control-Option-Command ] up, [ down, M mute; 1 and 2 flip the T7 sides to decks 3 and 4.
+void MainComponent::showCuePanel(std::size_t deck, crate::MarkLabel::Kind kind, int index) {
+    cuePanel.edit(deck, kind, index);
+    if (!cuePanel.isVisible()) {
+        cuePanel.setVisible(true);
+        resized();
+    }
+    highlightCueSelection();
+}
+
+void MainComponent::hideCuePanel() {
+    cuePanel.setVisible(false);
+    highlightCueSelection();
+    resized();
+}
+
+void MainComponent::highlightCueSelection() {
+    for (std::size_t i = 0; i < panels.size(); ++i) {
+        panels[i]->setSelectedLabel(cuePanel.isVisible() && cuePanel.deck() == i ? cuePanel.selection() : std::nullopt);
+    }
+}
+
 bool MainComponent::keyPressed(const juce::KeyPress& key) {
+    if (key == juce::KeyPress::escapeKey && cuePanel.isVisible()) {
+        hideCuePanel();
+        return true;
+    }
     const auto mods = key.getModifiers();
     if (!(mods.isCommandDown() && mods.isAltDown() && mods.isCtrlDown())) {
         return false;
@@ -2106,7 +2659,26 @@ void MainComponent::resized() {
         }
     }
     area.removeFromTop(4);
+    // GOOD MIXX strips: saved mixes after deck 1's FX ON, suggestions after deck 2's. With no room there
+    // (four decks, or the FX bar hidden) they sit at the top of the library's right-hand panel.
+    const auto leftSpare = showFx ? echoView.spareArea(0) : juce::Rectangle<int>{};
+    const auto rightSpare = showFx ? echoView.spareArea(1) : juce::Rectangle<int>{};
+    const bool inFxBar = leftSpare.getWidth() >= 300 && rightSpare.getWidth() >= 300;
+    library.setStripsInSidebar(!inFxBar);
+    if (cuePanel.isVisible()) {
+        cuePanel.setBounds(area.removeFromLeft(236).withTrimmedRight(4));
+    }
     library.setBounds(area);
+    if (inFxBar) {
+        savedStrip.setBounds(leftSpare.translated(echoView.getX(), echoView.getY()).reduced(0, 1));
+        suggestedStrip.setBounds(rightSpare.translated(echoView.getX(), echoView.getY()).reduced(0, 1));
+    } else {
+        const auto strips = library.sidebarStripArea().translated(library.getX(), library.getY());
+        savedStrip.setBounds(strips.withHeight(30));
+        suggestedStrip.setBounds(strips.withTrimmedTop(34).withHeight(30));
+    }
+    savedStrip.toFront(false);
+    suggestedStrip.toFront(false);
 }
 
 //==============================================================================

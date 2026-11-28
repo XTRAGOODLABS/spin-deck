@@ -546,26 +546,37 @@ void crate::paintWave(juce::Graphics& g, juce::Rectangle<int> bounds, const Deck
         }
     }
     if (markers) {
-        const auto flag = [&](double seconds, const juce::String& label, juce::Colour colour) {
-            const float x = at(seconds);
-            if (x < area.getX() - 30 || x > area.getRight()) {
-                return;
-            }
-            g.setColour(colour);
-            g.drawVerticalLine(juce::roundToInt(x), static_cast<float>(area.getY()), static_cast<float>(area.getBottom()));
-            g.setFont(juce::FontOptions(10.0f, juce::Font::bold));
-            const int w = juce::jmax(11, juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), label) + 6);
-            g.fillRect(juce::roundToInt(x), area.getY(), w, 13);
-            g.setColour(crate::ink);
-            g.drawText(label, juce::roundToInt(x), area.getY(), w, 13, juce::Justification::centred);
-        };
-        for (std::size_t i = 0; i < markers->hotCues.size(); ++i) {
-            if (markers->hotCues[i]) {
-                flag(*markers->hotCues[i], juce::String(i + 1), amber);
+        // Lines for every cue, mix marker (dashed) and branch. The scrolling waveform also gets the labels;
+        // a whole-song waveform has its labels in a strip above it.
+        const auto labels = markLabels(*markers);
+        for (const auto& label : labels) {
+            const float x = at(label.seconds);
+            if (x < area.getX() - 2 || x > area.getRight() + 2) continue;
+            g.setColour(label.colour);
+            if (label.kind == MarkLabel::Kind::mix) {
+                for (float y = static_cast<float>(area.getY()); y < area.getBottom(); y += 6.0f)
+                    g.fillRect(juce::Rectangle<float>(x - 1.0f, y, 2.0f, 3.0f));
+            } else {
+                g.fillRect(juce::Rectangle<float>(x - 1.0f, static_cast<float>(area.getY()), 2.0f, static_cast<float>(area.getHeight())));
             }
         }
-        if (markers->cue && follow) {
-            flag(*markers->cue, "CUE", amber);
+        if (follow) {
+            for (const auto& label : labels) {
+                const float x = at(label.seconds);
+                if (x < area.getX() - 200 || x > area.getRight()) continue;
+                g.setFont(juce::FontOptions(11.0f, juce::Font::bold));
+                const int w = juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), label.text) + 10;
+                drawMarkLabel(g, {juce::roundToInt(x) - 1, area.getY() + 1, w, 15}, label, false, 11.0f);
+            }
+            if (markers->cue) {
+                const float x = at(*markers->cue);
+                g.setColour(amber);
+                g.drawVerticalLine(juce::roundToInt(x), static_cast<float>(area.getY()), static_cast<float>(area.getBottom()));
+                g.setFont(juce::FontOptions(10.0f, juce::Font::bold));
+                g.fillRect(juce::roundToInt(x), area.getBottom() - 13, 28, 13);
+                g.setColour(crate::ink);
+                g.drawText("CUE", juce::roundToInt(x), area.getBottom() - 13, 28, 13, juce::Justification::centred);
+            }
         }
     }
     const float x = follow ? static_cast<float>(area.getCentreX()) : at(playhead);
@@ -575,6 +586,83 @@ void crate::paintWave(juce::Graphics& g, juce::Rectangle<int> bounds, const Deck
         juce::Path tri;
         tri.addTriangle(x - 5, static_cast<float>(bounds.getY()), x + 5, static_cast<float>(bounds.getY()), x, bounds.getY() + 6.0f);
         g.fillPath(tri);
+    }
+}
+
+std::vector<crate::MarkLabel> crate::markLabels(const DeckEngine::Markers& markers) {
+    std::vector<MarkLabel> labels;
+    for (std::size_t i = 0; i < markers.hotCues.size(); ++i) {
+        if (!markers.hotCues[i]) continue;
+        MarkLabel label;
+        label.kind = MarkLabel::Kind::cue;
+        label.index = static_cast<int>(i);
+        label.seconds = *markers.hotCues[i];
+        label.text = juce::String(static_cast<int>(i + 1)) +
+                (markers.cueNames[i].isNotEmpty() ? " " + markers.cueNames[i].toUpperCase() : juce::String{});
+        label.colour = markers.cueColours[i] != 0 ? juce::Colour(markers.cueColours[i]) : amber;
+        labels.push_back(label);
+    }
+    for (std::size_t i = 0; i < markers.marks.size(); ++i) {
+        const auto& mark = markers.marks[i];
+        MarkLabel label;
+        const bool branch = mark.kind == TrackMarker::Kind::branch;
+        label.kind = branch ? MarkLabel::Kind::branch : MarkLabel::Kind::mix;
+        label.index = static_cast<int>(i);
+        label.seconds = mark.seconds;
+        label.text = mark.text.isNotEmpty() ? mark.text.toUpperCase() : juce::String(branch ? "BRANCH" : "MIX");
+        label.colour = juce::Colour(mark.colour != 0 ? mark.colour : (branch ? 0xffc084fcu : 0xff38bdf8u));
+        labels.push_back(label);
+    }
+    std::stable_sort(labels.begin(), labels.end(), [](const auto& a, const auto& b) { return a.seconds < b.seconds; });
+    return labels;
+}
+
+void crate::drawMarkLabel(juce::Graphics& g, juce::Rectangle<int> box, const MarkLabel& label, bool selected, float fontSize) {
+    const auto r = box.toFloat();
+    g.setFont(juce::FontOptions(fontSize, juce::Font::bold));
+    if (label.kind == MarkLabel::Kind::cue) {
+        g.setColour(label.colour);
+        g.fillRoundedRectangle(r, 3.0f);
+        g.setColour(label.colour.getPerceivedBrightness() > 0.6f ? ink : juce::Colours::white);
+    } else {
+        g.setColour(label.colour.withMultipliedBrightness(0.25f).withMultipliedSaturation(0.8f));
+        g.fillRoundedRectangle(r, 3.0f);
+        g.setColour(label.colour);
+        g.drawRoundedRectangle(r.reduced(0.5f), 3.0f, 1.0f);
+        g.setColour(label.colour.brighter(0.6f));
+    }
+    g.drawText(label.text, box.reduced(5, 0), juce::Justification::centredLeft, true);
+    if (selected) {
+        g.setColour(juce::Colours::white);
+        g.drawRoundedRectangle(r.expanded(1.5f), 4.0f, 2.0f);
+    }
+}
+
+void crate::paintMarkerStrip(juce::Graphics& g, juce::Rectangle<int> strip, const std::vector<MarkLabel>& labels,
+        double duration, std::vector<std::pair<juce::Rectangle<int>, int>>* hits, int selected) {
+    if (hits) hits->clear();
+    if (strip.isEmpty()) return;
+    g.setColour(waveBackground.interpolatedWith(panel, 0.4f));
+    g.fillRect(strip);
+    if (duration <= 0) return;
+    const float fontSize = strip.getHeight() < 18 ? 9.0f : 11.0f;
+    const int height = juce::jmin(strip.getHeight() - 4, fontSize > 10 ? 18 : 13);
+    const int y = strip.getCentreY() - height / 2;
+    for (std::size_t i = 0; i < labels.size(); ++i) {
+        const auto& label = labels[i];
+        const int x = strip.getX() + juce::roundToInt(label.seconds / duration * strip.getWidth());
+        g.setFont(juce::FontOptions(fontSize, juce::Font::bold));
+        int width = juce::GlyphArrangement::getStringWidthInt(g.getCurrentFont(), label.text) + 10;
+        // Leave room for the next label: a crowded label shows only what fits (at least its start).
+        if (i + 1 < labels.size()) {
+            const int next = strip.getX() + juce::roundToInt(labels[i + 1].seconds / duration * strip.getWidth());
+            width = juce::jmin(width, juce::jmax(16, next - x - 2));
+        }
+        width = juce::jmin(width, strip.getRight() - x);
+        if (width < 6) continue;
+        const juce::Rectangle<int> box(x, y, width, height);
+        drawMarkLabel(g, box, label, static_cast<int>(i) == selected, fontSize);
+        if (hits) hits->push_back({box, static_cast<int>(i)});
     }
 }
 
@@ -886,6 +974,7 @@ void CrateEcho::resized() {
         group.removeFromLeft(6);
         armed[i].setBounds(group.removeFromLeft(46).reduced(1, 0));
         engaged[i].setBounds(group.removeFromLeft(40).reduced(1, 0));
+        spare[i] = count == 2 ? group.withTrimmedLeft(8).withTrimmedRight(4) : juce::Rectangle<int>{};
     };
     if (count == 2) {
         place(0, left);
@@ -1889,7 +1978,7 @@ void CrateLibrary::updateMixes() {
             const bool canRecall = from.existsAsFile() && to.existsAsFile() && !sameSessionTrack(from, to);
             rows.push_back({to, savedTitle(mix.incoming),
                     juce::String::fromUTF8("Proven · Saved ") + juce::String(mix.count) + "×",
-                    savedTitle(mix.outgoing), canRecall ? 1 : -1, true, canRecall ? 0 : -1, from, mix.points});
+                    savedTitle(mix.outgoing), canRecall ? 1 : -1, true, canRecall ? 0 : -1, from, mix.points, "Proven"});
         }
         if (!rows.empty()) {
             status = "Saved transitions";
@@ -1941,7 +2030,7 @@ void CrateLibrary::updateMixes() {
             const bool canRecall = !source->playing && recallTarget >= 0;
             rows.push_back({canRecall && loadedOnDeck ? incomingDeck->file : file, title, details, {},
                     canRecall ? recallTarget : available && !loadedOnDeck ? target : -1, true,
-                    canRecall ? static_cast<int>(source - decks.begin()) : -1, sourceFile, mix.points});
+                    canRecall ? static_cast<int>(source - decks.begin()) : -1, sourceFile, mix.points, "Proven"});
         }
 
         const auto sourceDeck = "Deck " + juce::String(source - decks.begin() + 1);
@@ -2000,8 +2089,12 @@ void CrateLibrary::updateMixes() {
                 constexpr std::array labels{"", " ×2", " ÷2"};
                 auto details = camelotKey(*match.track->key) + " · " +
                         juce::String(*match.track->bpm, 1) + labels[match.tempoRatio] + "  " + amount;
-                rows.push_back({match.track->file, displayTitle(match.track->file), details, {}, target});
-                if (++suggested == 3) {
+                const auto relation = keyRelation(*sourceTrack->key, *match.track->key);
+                MixRow row{match.track->file, displayTitle(match.track->file), details, {}, target};
+                row.tag = relation == KeyRelation::mood ? "MOOD" : relation == KeyRelation::boost ? "BOOST"
+                        : relation == KeyRelation::none ? "NEAR" : "MATCH";
+                rows.push_back(row);
+                if (++suggested == 5) {
                     break;
                 }
             }
@@ -2023,6 +2116,7 @@ void CrateLibrary::updateMixes() {
     }
     resized();
     mixList.repaint();
+    if (onMixesChanged) onMixesChanged();
 }
 
 void CrateLibrary::browse() {
@@ -2731,17 +2825,27 @@ void CrateLibrary::showAddMenu() {
     menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(addMenu));
 }
 
-void CrateLibrary::showMixMenu() {
+void CrateLibrary::showMixMenu(juce::Component* target) {
     juce::PopupMenu menu;
     menu.addItem("Save mix...", saveMix.isEnabled(), false, [this] { chooseMixToSave(); });
     menu.addItem("Relink missing audio...", [this] { chooseAudioToRelink(); });
-    menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(mixMenu));
+    menu.showMenuAsync(juce::PopupMenu::Options{}.withTargetComponent(target != nullptr ? target : &mixMenu));
+}
+
+void CrateLibrary::setStripsInSidebar(bool inSidebar) {
+    if (stripsInSidebar != inSidebar) {
+        stripsInSidebar = inSidebar;
+        resized();
+    }
 }
 
 void CrateLibrary::resized() {
     auto area = getLocalBounds();
-    sidebar = area.removeFromLeft(228);
+    // Search, filter and playlists on the right; the song list gets the rest.
+    sidebar = area.removeFromRight(264);
     auto side = sidebar.reduced(8, 8);
+    stripArea = stripsInSidebar ? side.removeFromTop(64) : juce::Rectangle<int>{};
+    if (stripsInSidebar) side.removeFromTop(6);
     search.setBounds(side.removeFromTop(28));
     side.removeFromTop(4);
     filterButton.setBounds(side.removeFromTop(24));
@@ -2761,7 +2865,10 @@ void CrateLibrary::resized() {
     sidebarList.setBounds(side);
     sidebarList.updateContent();
 
-    mixPanel = area.removeFromRight(296);
+    mixPanel = {};
+    for (auto* part : std::initializer_list<juce::Component*>{&mixList, &mixMenu, &mixStatus, &saveStatus}) {
+        part->setVisible(false);
+    }
     table.setBounds(area);
     const int flexible = juce::jmax(300, area.getWidth() - 42 - 64 - 64 - 56 - 74 - 18);
     table.getHeader().setColumnWidth(1, flexible * 33 / 100);
@@ -2769,26 +2876,135 @@ void CrateLibrary::resized() {
     table.getHeader().setColumnWidth(7, flexible * 26 / 100);
     table.getHeader().setColumnWidth(8, flexible * 16 / 100);
 
-    auto mixes = mixPanel.reduced(8, 6);
-    mixHeader = mixes.removeFromTop(32);
-    mixMenu.setBounds(mixHeader.withTrimmedLeft(mixHeader.getWidth() - 32).reduced(1, 3));
-    auto status = mixes.removeFromTop(26);
-    mixStatus.setBounds(status);
-    saveStatus.setBounds(saveStatus.getText().isEmpty() ? juce::Rectangle<int>{} : mixes.removeFromTop(18));
-    mixes.removeFromTop(2);
-    mixList.setBounds(mixes);
+    mixHeader = {};
 }
 
 void CrateLibrary::paint(juce::Graphics& g) {
     g.fillAll(crate::panel);
     g.setColour(crate::line);
     g.drawRect(getLocalBounds());
-    g.drawVerticalLine(sidebar.getRight(), 0, static_cast<float>(getHeight()));
-    g.drawVerticalLine(mixPanel.getX(), 0, static_cast<float>(getHeight()));
+    g.drawVerticalLine(sidebar.getX(), 0, static_cast<float>(getHeight()));
+}
+
+
+//==============================================================================
+// AI-written (Claude). Review before relying on it.
+// GOOD MIXX strips in the FX bar.
+// AI-written (Claude). End.
+GoodMixxStrip::GoodMixxStrip(CrateLibrary& owner, bool savedMixes) : library(owner), saved(savedMixes) {
+    up.setButtonText(juce::String::fromUTF8("\xE2\x96\xB2"));
+    down.setButtonText(juce::String::fromUTF8("\xE2\x96\xBC"));
+    up.setTitle(saved ? "Previous saved mix" : "Previous suggestion");
+    down.setTitle(saved ? "Next saved mix" : "Next suggestion");
+    for (auto* button : {&up, &down}) {
+        button->getProperties().set("fontSize", 10.0f);
+        addAndMakeVisible(*button);
+    }
+    up.onClick = [this] { index = juce::jmax(0, index - 1); refresh(); };
+    down.onClick = [this] { index = index + 1; refresh(); };
+    action.getProperties().set("fontSize", 10.5f);
+    addAndMakeVisible(action);
+    menu.setButtonText(juce::String::fromUTF8("\xE2\x98\xB0"));
+    menu.setTooltip("Save a mix or relink missing audio");
+    menu.getProperties().set("fontSize", 14.0f);
+    menu.onClick = [this] { library.showMixMenu(&menu); };
+    if (saved) addAndMakeVisible(menu);
+    refresh();
+}
+
+std::vector<const CrateLibrary::MixRow*> GoodMixxStrip::rows() const {
+    std::vector<const CrateLibrary::MixRow*> list;
+    for (const auto& row : library.mixModel.rows) {
+        if (row.proven == saved) list.push_back(&row);
+    }
+    return list;
+}
+
+void GoodMixxStrip::refresh() {
+    const auto list = rows();
+    index = juce::jlimit(0, juce::jmax(0, static_cast<int>(list.size()) - 1), index);
+    up.setEnabled(index > 0);
+    down.setEnabled(index + 1 < static_cast<int>(list.size()));
+    if (list.empty()) {
+        action.setVisible(false);
+    } else {
+        const auto row = *list[static_cast<std::size_t>(index)];
+        action.setVisible(true);
+        action.setEnabled(row.deck >= 0);
+        if (row.outgoingDeck >= 0) {
+            action.setButtonText("RECALL");
+            action.setTooltip("Prepare the saved loop, cue and sync settings on paused decks.");
+            action.onClick = [this, row] {
+                if (library.onRecallMix) library.onRecallMix(row.outgoingDeck, row.outgoingFile, row.deck, row.file, row.points);
+            };
+        } else {
+            action.setButtonText(row.deck >= 0 ? "LOAD " + juce::String(row.deck + 1) : juce::String("LOAD"));
+            action.setTooltip({});
+            action.onClick = [this, file = row.file, deck = row.deck] {
+                if (deck >= 0 && library.onLoadSuggested) library.onLoadSuggested(deck, file);
+            };
+        }
+    }
+    resized();
+    repaint();
+}
+
+void GoodMixxStrip::resized() {
+    auto area = getLocalBounds();
+    if (saved) menu.setBounds(area.removeFromRight(26).reduced(1, 1));
+    const bool wide = area.getWidth() > 360;
+    narrow = area.getWidth() < 300;
+    tagArea = area.removeFromLeft(wide ? 86 : narrow ? 48 : 70).reduced(0, 1);
+    area.removeFromLeft(4);
+    up.setBounds(area.removeFromLeft(22).reduced(1, 1));
+    down.setBounds(area.removeFromLeft(22).reduced(1, 1));
+    area.removeFromLeft(4);
+    if (action.isVisible()) action.setBounds(area.removeFromRight(narrow ? 52 : 62).reduced(1, 1));
+    area.removeFromRight(4);
+    badgeArea = area.removeFromRight(wide ? 56 : 0).reduced(0, 3);
+    area.removeFromRight(wide ? 4 : 0);
+    textArea = area;
+}
+
+void GoodMixxStrip::paint(juce::Graphics& g) {
+    const auto tagColour = saved ? juce::Colour(0xff9af0bc) : juce::Colour(0xff7dd3fc);
+    g.setColour(saved ? juce::Colour(0xff1a2e22) : juce::Colour(0xff0c2a3a));
+    g.fillRoundedRectangle(tagArea.toFloat(), 4.0f);
+    g.setColour(tagColour);
+    g.setFont(juce::FontOptions(10.5f, juce::Font::bold));
+    g.drawText(narrow ? (saved ? "SAVED" : "NEXT") : (saved ? "SAVED MIXX" : "SUGGESTED"), tagArea,
+            juce::Justification::centred);
+    const auto list = rows();
+    if (list.empty()) {
+        g.setColour(crate::muted);
+        g.setFont(juce::FontOptions(12.0f));
+        const bool others = !library.mixModel.rows.empty();
+        g.drawText(saved ? "No saved mixes for this song yet"
+                         : others ? "No other songs fit right now" : library.mixStatus.getText(),
+                textArea, juce::Justification::centredLeft, true);
+        return;
+    }
+    const auto& row = *list[static_cast<std::size_t>(index)];
+    auto text = textArea;
+    auto top = text.removeFromTop(text.getHeight() / 2 + 1);
     g.setColour(crate::text);
-    g.setFont(crate::brandFont(22));
-    g.drawText(juce::String::fromUTF8("GOOD MIXX\xE2\x84\xA2"), mixHeader.withTrimmedLeft(4),
-            juce::Justification::centredLeft);
+    g.setFont(juce::FontOptions(13.0f, juce::Font::bold));
+    g.drawText(row.title, top, juce::Justification::bottomLeft, true);
+    juce::String sub = row.details;
+    if (row.outgoing.isNotEmpty()) sub += " after " + row.outgoing;
+    sub += juce::String::fromUTF8(" \xC2\xB7 ") + juce::String(index + 1) + " of " + juce::String(static_cast<int>(list.size()));
+    g.setColour(saved ? juce::Colour(0xfff59e0b) : juce::Colour(0xff7dd3fc));
+    g.setFont(juce::FontOptions(10.5f));
+    g.drawText(sub, text, juce::Justification::topLeft, true);
+    if (!badgeArea.isEmpty() && row.tag.isNotEmpty()) {
+        const auto colour = row.tag == "MOOD" ? juce::Colour(0xffe08a3c) : row.tag == "BOOST" ? juce::Colour(0xffa98bf0)
+                : row.tag == "NEAR" ? crate::muted : crate::green;
+        g.setColour(colour);
+        g.fillRoundedRectangle(badgeArea.toFloat(), 4.0f);
+        g.setColour(crate::ink);
+        g.setFont(juce::FontOptions(10.0f, juce::Font::bold));
+        g.drawText(row.tag, badgeArea, juce::Justification::centred);
+    }
 }
 
 }

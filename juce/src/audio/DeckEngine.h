@@ -104,8 +104,26 @@ class DeckEngine final {
     struct Markers {
         std::optional<double> cue;
         std::array<std::optional<double>, 8> hotCues{};
+        std::array<juce::String, 8> cueNames{};
+        std::array<juce::uint32, 8> cueColours{};
+        std::vector<TrackMarker> marks; // mix markers and branches, in time order
+        bool branchesOn = true;
+        bool hasStems = false;
     };
     Markers markers() const;
+    // Cue point and marker edits, saved with the song right away.
+    void setCueLabel(std::size_t slot, const juce::String& name, juce::uint32 colour);
+    void moveHotCue(std::size_t slot, double seconds); // negative: to the playhead
+    void placeHotCue(std::size_t slot, double seconds); // set a hot cue at a given spot (a marker turned into a cue)
+    // Adds a mix marker or branch; seconds < 0 puts it at the playhead. Returns its index after sorting.
+    int addMarker(TrackMarker marker);
+    int updateMarker(std::size_t index, TrackMarker marker); // returns the new index after sorting
+    void removeMarker(std::size_t index);
+    // Branches switch stems when the song plays past them. On by default for every song; per deck.
+    void setBranchesEnabled(bool enabled);
+    bool branchesEnabled() const;
+    // Seconds snapped to the nearest beat when QUANT is on and there is a grid.
+    double snapSeconds(double seconds) const;
     void toggleStemMutes(uint8_t mask);
     // For controller mappings (Mixxx-style controls).
     double sourceSampleRate() const;
@@ -169,6 +187,9 @@ class DeckEngine final {
     std::optional<TrackBeatGrid> previousGrid;
     bool gridLocked = false;
     void persistCue(const juce::File& track, std::size_t slot, std::optional<double> value);
+    void persistMarkers();
+    void applyBranches(double from, double to); // audio thread, under the lock
+    void applyBranchAt(double position);        // after a jump: the last branch before here
     void recordSaveResult(const juce::File& track, bool success);
 
     struct ChannelSamples {
@@ -222,6 +243,11 @@ class DeckEngine final {
     std::optional<double> loopIn;
     std::array<std::optional<double>, 8> cues{};
     std::array<std::optional<Loop>, 8> hotLoops{};
+    std::array<juce::String, 8> cueNames{};
+    std::array<juce::uint32, 8> cueColours{};
+    std::vector<TrackMarker> marks;
+    bool branchesOn = true;
+    uint64_t branchJumps = 0;
     std::vector<Loop> savedLoops;
     uint64_t revision = 0;
     uint64_t jumps = 0;
